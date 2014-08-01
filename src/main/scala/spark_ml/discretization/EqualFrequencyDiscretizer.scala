@@ -1,0 +1,250 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package spark_ml.discretization
+
+import scala.collection.mutable
+
+import org.apache.spark.rdd.RDD
+import scala.util.Random
+import spark_ml.util.RandomSet
+
+/**
+ * Generate bins with an approximately equal number of elements in each bin for numeric features.
+ * For categorical features, it's one to one mapping.
+ * This will throw an exception if a categorical feature has a higher cardinality than the MaxNumBins option.
+ */
+object EqualFrequencyDiscretizer extends Discretizer {
+  private case class PartitionSample(
+      numFeatures: Int,
+      maxNumericFeatureSamples: Int,
+      categoricalFeatureIndices: Set[Int],
+      maxCategoricalCardinality: Int,
+      labelIsCategorical: Boolean) {
+    var maxLabelValue: Double = Double.NegativeInfinity
+    val numericSamples = mutable.Map[Int, Array[Double]]()
+    val categoricalMaxVals = mutable.Map[Int, Int]()
+    var numSamplesSeen = 0
+    var numericSampleCount = 0
+
+    {
+      // Initialize the structures.
+      var featId = 0
+      while (featId < numFeatures) {
+        if (!categoricalFeatureIndices.contains(featId)) {
+          numericSamples.put(featId, Array.fill[Double](maxNumericFeatureSamples)(0.0))
+        } else {
+          categoricalMaxVals.put(featId, 0)
+        }
+
+        featId += 1
+      }
+    }
+
+    // We don't need to serialize this.
+    @transient private var randGen: Random = new Random()
+
+    /**
+     * Add a sample of features.
+     * This object will automatically determine whether to sample the given features or not.
+     * @param sample The feature set we are adding.
+     * @return This
+     */
+    def addSample(sample: (Double, Array[Double])): this.type = {
+      val label = sample._1
+      val features = sample._2
+      val numFeatures = features.length
+      var featId = 0
+      while (featId < numFeatures) {
+        val value = features(featId)
+        if (!categoricalFeatureIndices.contains(featId)) {
+          if (numSamplesSeen < maxNumericFeatureSamples) {
+            // If there aren't enough samples, just add the value to the array.
+            numericSamples(featId)(numSamplesSeen) = value
+          } else {
+            // If the samples are filled, then we'll sample and replace one of the previously selected values.
+            // This does M random samples from a stream.
+            // Each new sample from the stream is chosen with the M / N probability where N is the total number of samples seen so far.
+            // Then, if the sample is chosen, one of the previously chosen samples is randomly chosen and replaced with the new one.
+            // This guarantees a random M samples from a stream.
+            val chosenIdx = randGen.nextInt(numSamplesSeen + 1)
+            if (chosenIdx < maxNumericFeatureSamples) {
+              numericSamples(featId)(chosenIdx) = value
+            }
+          }
+        } else {
+          // If it's a categorical feature value, make sure that it's a non-negative integer value.
+          // Also, the maximum number should be smaller than the maximum cardinality.
+          if (value < 0.0 || value.toInt.toDouble != value) {
+            throw InvalidCategoricalValueException(value + " is not a valid categorical value.")
+          }
+
+          if (value >= maxCategoricalCardinality) {
+            throw CardinalityOverLimitException("The categorical feature " + featId + " has a cardinality that exceeds the limit " + maxCategoricalCardinality + " : " + value.toInt.toString)
+          }
+
+          categoricalMaxVals.put(featId, math.max(value.toInt, categoricalMaxVals(featId)))
+        }
+
+        featId += 1
+      }
+
+      if (labelIsCategorical && (label < 0.0 || label.toInt.toDouble != label)) {
+        throw InvalidCategoricalValueException(label + " is not a valid categorical label.")
+      }
+
+      maxLabelValue = math.max(label, maxLabelValue)
+
+      numSamplesSeen += 1
+      numericSampleCount = math.min(numSamplesSeen, maxNumericFeatureSamples)
+
+      this
+    }
+
+    /**
+     * Merge samples together in place.
+     * @param another Another sample that we want to merge with.
+     * @return This
+     */
+    def mergeInPlace(another: PartitionSample): this.type = {
+      val randGen = new Random()
+      val mySampleCount = numericSampleCount
+      val theirSampleCount = another.numericSampleCount
+      val totalSampleCount = mySampleCount + theirSampleCount
+      val mergedSampleCount = math.min(totalSampleCount, maxNumericFeatureSamples)
+      numericSamples.keys.foreach(featId => {
+        val mySamples = numericSamples(featId)
+        val theirSamples = another.numericSamples(featId)
+        val mergedSamples = new Array[Double](mergedSampleCount)
+
+        if (mergedSampleCount < totalSampleCount) {
+          val selectedSampleIndices = RandomSet.nChooseK(mergedSampleCount, totalSampleCount, randGen)
+          var i = 0
+          while (i < selectedSampleIndices.length) {
+            val sampleIdx = selectedSampleIndices(i)
+            if (sampleIdx < mySampleCount) {
+              mergedSamples(i) = mySamples(sampleIdx)
+            } else {
+              mergedSamples(i) = theirSamples(sampleIdx - mySampleCount)
+            }
+
+            i += 1
+          }
+        } else {
+          Array.copy(mySamples, 0, mergedSamples, 0, mySampleCount)
+          Array.copy(theirSamples, 0, mergedSamples, mySampleCount, theirSampleCount)
+        }
+
+        numericSamples(featId) = mergedSamples
+      })
+
+      categoricalMaxVals.keys.foreach(featId => categoricalMaxVals(featId) = math.max(categoricalMaxVals(featId), another.categoricalMaxVals(featId)))
+
+      maxLabelValue = math.max(maxLabelValue, another.maxLabelValue)
+
+      numericSampleCount = mergedSampleCount
+
+      this
+    }
+  }
+
+  override def discretizeFeatures(
+    input: RDD[(Double, Array[Double])],
+    categoricalFeatureIndices: Set[Int],
+    labelIsCategorical: Boolean,
+    config: Map[String, String]): (Double, Array[Bins]) = {
+    // Numeric feature options.
+    val numBins = config(StringConstants.NumBins_Numeric).toInt
+    val subSampleCount = config(StringConstants.SubSampleCount_Numeric).toInt
+
+    // Categorical feature options.
+    val maxCardinality = config(StringConstants.MaxCardinality_Categoric).toInt
+
+    val numFeatures = input.first()._2.length
+
+    // We will first find unique value counts for each numeric feature.
+    // This will fail if the cardinality is too large for a numeric feature or a categorical feature.
+    val overallSample = input.mapPartitions(rows => {
+      val partitionSample = PartitionSample(numFeatures, subSampleCount, categoricalFeatureIndices, maxCardinality, labelIsCategorical)
+      while (rows.hasNext) {
+        val row = rows.next()
+        partitionSample.addSample(row)
+      }
+
+      Array(partitionSample).toIterator
+    }).reduce((sampleA, sampleB) => sampleA.mergeInPlace(sampleB))
+
+    // Now, let's create equi-frequency numeric bins.
+    var featId = 0
+    val featureBins = new mutable.ArrayBuffer[Bins]()
+    val minBinWeight = math.ceil(overallSample.numericSampleCount.toDouble / numBins.toDouble).toInt
+    while (featId < numFeatures) {
+      if (!categoricalFeatureIndices.contains(featId)) {
+        val numericSamples = if (overallSample.numericSampleCount < subSampleCount) {
+          overallSample.numericSamples(featId).slice(0, overallSample.numericSampleCount)
+        } else {
+          overallSample.numericSamples(featId)
+        }
+
+        val sortedNumericSamples = numericSamples.sorted
+
+        // Create bins from left to right, and we'll move onto a new bin once the current bin is filled.
+        // This guarantees that we'll have at most numBins bins and not more.
+        val bins = new mutable.ArrayBuffer[NumericBin]()
+        var sampleIdx = 0
+        var curBinLower = Double.NegativeInfinity
+        var curBinUpper = Double.NegativeInfinity
+        var curBinWeight = 0
+        while (sampleIdx < sortedNumericSamples.length) {
+          var endReached = sampleIdx == (sortedNumericSamples.length - 1)
+          val curVal = sortedNumericSamples(sampleIdx)
+          curBinWeight += 1
+
+          // Skip the same values.
+          while (!endReached && curVal == sortedNumericSamples(sampleIdx + 1)) {
+            curBinWeight += 1
+            sampleIdx += 1
+            endReached = sampleIdx == (sortedNumericSamples.length - 1)
+          }
+
+          if (endReached) {
+            curBinUpper = Double.PositiveInfinity
+          } else {
+            curBinUpper = (curVal + sortedNumericSamples(sampleIdx + 1)) / 2.0
+          }
+
+          if (curBinWeight >= minBinWeight || endReached) {
+            bins += NumericBin(curBinLower, curBinUpper)
+            curBinLower = curBinUpper
+            curBinWeight = 0
+          }
+
+          sampleIdx += 1
+        }
+
+        featureBins += NumericBins(bins.toArray)
+      } else {
+        // For categorical features, the maximum value + 1 is the cardinality.
+        featureBins += CategoricalBins(overallSample.categoricalMaxVals(featId) + 1)
+      }
+
+      featId += 1
+    }
+
+    (overallSample.maxLabelValue, featureBins.toArray)
+  }
+}

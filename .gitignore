@@ -1,0 +1,25 @@
+*.tmp
+*.bak
+*.swp
+*~.nib
+
+# SBT
+log/
+target/
+*.class
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Intellij
+.idea/
+.idea_modules/
+*.iml
+*.iws
+*.ipr
+
+# Mac
+.DS_Store
+
