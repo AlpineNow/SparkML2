@@ -56,7 +56,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -83,7 +83,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -110,7 +110,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -135,7 +135,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -162,6 +162,16 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     assert(forest4.trees(0).subTrees.size === readTree.subTrees.size)
 
     testDataRaw.foreach(row => assert(forest4.trees(0).predict(row._2) === readTree.predict(row._2)))
+
+    // Make sure that the variable importances are as expected.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 45.6578))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 45.6578))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest3.varImportance.featureImportance(0), 29.1285))
+    assert(compareDouble(forest3.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest4.varImportance.featureImportance(0), 29.1285))
+    assert(compareDouble(forest4.varImportance.featureImportance(1), 11.8436))
   }
 
   test("Train a tree 2 - unsigned Short features RDD") {
@@ -194,7 +204,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -221,7 +231,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -233,6 +243,12 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 1.916716186961402))
 
     testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+
+    // Make sure that the variable importances are as expected.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 45.6578))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 45.6578))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 11.8436))
   }
 
   test("Train a tree 3 - unsigned Byte features Local") {
@@ -266,7 +282,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -293,7 +309,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -305,6 +321,12 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 1.916716186961402))
 
     testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+
+    // Make sure that the variable importances are as expected.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 45.6578))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 45.6578))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 11.8436))
   }
 
   test("Train a tree 4 - unsigned Short features Local") {
@@ -338,7 +360,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -365,7 +387,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(4)),
       new ConsoleNotifiee,
       None)
@@ -377,6 +399,12 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 1.916716186961402))
 
     testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+
+    // Make sure that the variable importances are as expected.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 45.6578))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 45.6578))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 11.8436))
   }
 
   test("Train a regression tree 1 - unsigned Byte features RDD") {
@@ -409,7 +437,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -437,7 +465,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -464,7 +492,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -489,7 +517,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -501,6 +529,16 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     assert(compareDouble(forest4.trees(0).nodes(1).impurity, 0.9733333))
 
     testDataRaw.foreach(row => assert(forest3.predict(row._2) === forest4.predict(row._2)))
+
+    // Compare the variable importance with expected values.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 23.2))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.2))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest3.varImportance.featureImportance(0), 18.5333))
+    assert(compareDouble(forest3.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest4.varImportance.featureImportance(0), 18.5333))
+    assert(compareDouble(forest4.varImportance.featureImportance(1), 6))
   }
 
   test("Train a regression tree 2 - unsigned Short features RDD") {
@@ -533,7 +571,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -561,7 +599,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -573,6 +611,12 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 0.9733333))
 
     testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+
+    // Compare the variable importance with expected values.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 23.2))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.2))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 6))
   }
 
   test("Train a regression tree 3 - unsigned Byte features Local") {
@@ -606,7 +650,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -634,7 +678,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -646,6 +690,12 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 0.9733333))
 
     testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+
+    // Compare the variable importance with expected values.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 23.2))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.2))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 6))
   }
 
   test("Train a regression tree 4 - unsigned Short features Local") {
@@ -679,7 +729,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 0,
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -707,7 +757,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 10,
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None),
       new ConsoleNotifiee,
       None)
@@ -719,5 +769,11 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 0.9733333))
 
     testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+
+    // Compare the variable importance with expected values.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 23.2))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.2))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 6))
   }
 }

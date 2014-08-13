@@ -331,7 +331,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 100000,
         numSubTreesPerIteration = 3,
         storeModelInMemory = true,
-        outputPath = Some("/tmp/"),
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(numClasses)))
 
     assert(nodeDepths(0).size === 0)
@@ -556,7 +556,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 100000,
         numSubTreesPerIteration = 3,
         storeModelInMemory = true,
-        outputPath = Some("/tmp/"),
+        outputStorage = new NullSinkForestStorage,
         numClasses = Some(numClasses)))
 
     assert(nodeDepths(0).size === 0)
@@ -836,7 +836,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 100000,
         numSubTreesPerIteration = 3,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None))
 
     assert(nodeDepths(0).size === 0)
@@ -1067,7 +1067,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         localTrainThreshold = 100000,
         numSubTreesPerIteration = 3,
         storeModelInMemory = true,
-        outputPath = None,
+        outputStorage = new NullSinkForestStorage,
         numClasses = None))
 
     assert(nodeDepths(0).size === 0)

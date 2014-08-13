@@ -13,6 +13,7 @@ object spark_ml extends Build {
     "org.apache.spark" %% "spark-core" % "1.0.1" % "provided",
     "org.apache.spark" %% "spark-mllib" % "1.0.1" % "provided",
     "org.apache.hadoop" % "hadoop-client" % "1.0.4" % "provided",
+    "org.spire-math" %% "spire" % "0.8.2",
     "org.scalanlp" %% "breeze" % "0.8" % "provided",
     "com.github.scopt" %% "scopt" % "3.2.0"
   )

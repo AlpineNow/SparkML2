@@ -27,6 +27,7 @@ import scala.util.Random
  * @param treeId The Id of the tree that the node belongs to.
  * @param nodeId The node Id.
  * @param prediction The node prediction.
+ * @param depth The depth of the node.
  * @param weight The node weight.
  * @param impurity The node impurity.
  * @param splitImpurity The impurity after the node split.
@@ -36,6 +37,7 @@ case class TrainedNodeInfo(
   treeId: Int,
   nodeId: Int,
   prediction: Double,
+  depth: Int,
   weight: Double,
   impurity: Double,
   splitImpurity: Option[Double],
@@ -406,7 +408,7 @@ abstract class AggregatedStatistics(
             }
           }
 
-          output += TrainedNodeInfo(treeIdx, nodeId, prediction, weightSum.toDouble, impurity, splitImpurity, nodeSplit)
+          output += TrainedNodeInfo(treeIdx, nodeId, prediction, nodeDepth, weightSum.toDouble, impurity, splitImpurity, nodeSplit)
         }
 
         nodeIdx += 1

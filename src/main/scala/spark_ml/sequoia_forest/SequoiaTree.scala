@@ -23,6 +23,8 @@ import java.io._
 import java.nio.ByteBuffer
 import scala.Serializable
 
+import spire.implicits._
+
 /**
  * Supported types of trees.
  */
@@ -148,8 +150,10 @@ case class SequoiaTree(var treeId: Int) {
 /**
  * A forest is simply a collection of trees.
  * @param trees Trees in the forest.
+ * @param treeType Type of trees (classification or regression).
+ * @param varImportance Variable importance tracker.
  */
-case class SequoiaForest(trees: Array[SequoiaTree], treeType: TreeType.TreeType) {
+case class SequoiaForest(trees: Array[SequoiaTree], treeType: TreeType.TreeType, varImportance: VarImportance) {
   /**
    * Predict from the features.
    * @param features A double array of features.
@@ -216,6 +220,18 @@ object SequoiaForestWriter {
   def writeForestInfo(numTrees: Int, treeType: TreeType.TreeType, outputStream: OutputStream): Unit = {
     outputStream.write((numTrees.toString + "\n").getBytes)
     outputStream.write((treeType.toString + "\n").getBytes)
+  }
+
+  /**
+   * Write the variable importance object to a stream.
+   * @param varImportance The variable importance object to write.
+   * @param outputStream Output stream object.
+   */
+  def writeVariableImportance(varImportance: VarImportance, outputStream: OutputStream): Unit = {
+    writeInt(varImportance.numFeatures, outputStream) // Write the number of features.
+    cfor(0)(_ < varImportance.numFeatures, _ + 1)(
+      featId => writeDouble(varImportance.featureImportance(featId), outputStream)
+    )
   }
 
   /**
@@ -385,7 +401,29 @@ object SequoiaForestReader {
       i += 1
     }
 
-    SequoiaForest(trees, treeType)
+    val varImpStream = hdfs.open(new org.apache.hadoop.fs.Path(forestPath, "varImp"))
+    val varImportance = SequoiaForestReader.readVarImportance(varImpStream)
+    varImpStream.close()
+
+    SequoiaForest(trees, treeType, varImportance)
+  }
+
+  /**
+   * Read the variable importance object from a stream.
+   * @param is Input stream.
+   * @return A variable importance object.
+   */
+  private[spark_ml] def readVarImportance(is: InputStream): VarImportance = {
+    val numFeatures = readInt(is)
+    val varImportance = VarImportance(numFeatures)
+    cfor(0)(_ < numFeatures, _ + 1)(
+      featId => {
+        val varImp = readDouble(is)
+        varImportance.addVarImportance(featId, varImp)
+      }
+    )
+
+    varImportance
   }
 
   /**

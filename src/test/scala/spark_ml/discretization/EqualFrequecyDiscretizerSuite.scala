@@ -39,16 +39,14 @@ class EqualFrequecyDiscretizerSuite extends FunSuite with LocalSparkContext {
         Map[String, String](StringConstants.NumBins_Numeric -> "5", StringConstants.SubSampleCount_Numeric -> "1000", StringConstants.MaxCardinality_Categoric -> "1000")
       )
     } catch {
-      case e: InvalidCategoricalValueException => {
+      case e: InvalidCategoricalValueException =>
         println(e.toString)
         exceptionThrown = true
-      }
 
-      case e: SparkException => {
+      case e: SparkException =>
         if (e.getMessage.contains("InvalidCategoricalValueException")) {
           exceptionThrown = true
         }
-      }
     }
 
     assert(exceptionThrown)
@@ -67,16 +65,14 @@ class EqualFrequecyDiscretizerSuite extends FunSuite with LocalSparkContext {
         Map[String, String](StringConstants.NumBins_Numeric -> "5", StringConstants.SubSampleCount_Numeric -> "1000", StringConstants.MaxCardinality_Categoric -> "1000")
       )
     } catch {
-      case e: InvalidCategoricalValueException => {
+      case e: InvalidCategoricalValueException =>
         println(e.toString)
         exceptionThrown = true
-      }
 
-      case e: SparkException => {
+      case e: SparkException =>
         if (e.getMessage.contains("InvalidCategoricalValueException")) {
           exceptionThrown = true
         }
-      }
     }
 
     assert(exceptionThrown) // The label should trigger an exception
@@ -101,16 +97,14 @@ class EqualFrequecyDiscretizerSuite extends FunSuite with LocalSparkContext {
         Map[String, String](StringConstants.NumBins_Numeric -> "5", StringConstants.SubSampleCount_Numeric -> "1000", StringConstants.MaxCardinality_Categoric -> "1000")
       )
     } catch {
-      case e: InvalidCategoricalValueException => {
+      case e: InvalidCategoricalValueException =>
         println(e.toString)
         exceptionThrown = true
-      }
 
-      case e: SparkException => {
+      case e: SparkException =>
         if (e.getMessage.contains("InvalidCategoricalValueException")) {
           exceptionThrown = true
         }
-      }
     }
 
     assert(exceptionThrown) // The label should trigger an exception
@@ -135,11 +129,10 @@ class EqualFrequecyDiscretizerSuite extends FunSuite with LocalSparkContext {
         Map[String, String](StringConstants.NumBins_Numeric -> "5", StringConstants.SubSampleCount_Numeric -> "1000", StringConstants.MaxCardinality_Categoric -> "3")
       )
     } catch {
-      case e: SparkException => {
+      case e: SparkException =>
         if (e.getMessage.contains("CardinalityOverLimitException")) {
           exceptionThrown = true
         }
-      }
     }
 
     assert(exceptionThrown)

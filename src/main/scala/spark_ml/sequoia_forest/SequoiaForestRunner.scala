@@ -228,7 +228,7 @@ object SequoiaForestRunner {
         treeType = if (config.forestType == ForestType.InfoGain) TreeType.Classification_InfoGain else TreeType.Regression_Variance,
         input = trainingRDD.repartition(config.numPartitions),
         numTrees = config.numTrees,
-        outputPath = config.outputPath,
+        outputStorage = new HDFSForestStorage(trainingRDD.sparkContext.hadoopConfiguration, config.outputPath),
         validationData = validationData,
         categoricalFeatureIndices = categoricalFeatureIndices,
         notifiee = notifiee,

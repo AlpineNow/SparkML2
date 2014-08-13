@@ -20,8 +20,6 @@ package spark_ml.sequoia_forest
 import scala.util.Random
 import scala.collection.mutable
 
-import org.apache.hadoop.fs._
-
 import spark_ml.discretization._
 import java.io._
 import java.util.Calendar
@@ -32,132 +30,12 @@ import org.apache.spark.rdd.RDD
  */
 object SequoiaForestTrainer {
   /**
-   * Train a Sequoia Forest classifier using the information gain criteria for trees.
-   * @param input An RDD of label/features tuple. Label should be from 0...(K - 1) for K target classes. Features should be Doubles for both numeric and categorical features.
-   * @param numTrees Number of trees that we want to train.
-   * @param outputPath The path where output trees are written to.
-   * @param validationData Optional validation data array. If this is not None, then the trained model would also be stored in memory.
-   * @param categoricalFeatureIndices Indices of categorical features.
-   * @param notifiee A notifiee object that will receive training progress messages.
-   * @param discretizationType The discretization type to use for transforming features to Bin IDs.
-   * @param maxNumNumericBins Maximum number of bins to use for numeric features during discretization. It should be equal to or smaller than unsigned Byte/Short maximum.
-   * @param maxNumCategoricalBins Maximum number of bins to use for categorical features during discretization. The cardinality of categorical variables should be smaller than/equal to this.
-   * @param samplingType Sampling type (either with-replacement or without-replacement).
-   * @param samplingRate Sampling rate (between 0 and 1).
-   * @param mtry Number of random features per node. If this is -1, sqrt would be used.
-   * @param minSplitSize The minimum size of nodes that are eligible for splitting. 2 is the lowest number (means fully growing trees).
-   * @param maxDepth The maximum depth of the tree. -1 implies no limit.
-   * @param numNodesPerIteration The number of row filters to use in each RDD iteration for distributed node splits. -1 means that it'll be automatically determined (based on memory availability).
-   * @param localTrainThreshold The number of training samples a node sees before the whole sub-tree is trained locally. -1 means that it'll be automatically determined (based on memory availability).
-   * @param numSubTreesPerIteration The number of sub trees to train in each RDD iteration. -1 means that it'll be automatically determined (based on memory availability).
-   * @return A trained sequoia forest object if there's one in memory. Otherwise, the trees would be stored in the output path only and this would return None.
-   */
-  def trainClassifier_infoGain(
-    input: RDD[(Double, Array[Double])],
-    numTrees: Int,
-    outputPath: String,
-    validationData: Option[Array[(Double, Array[Double])]],
-    categoricalFeatureIndices: Set[Int] = Set[Int](),
-    notifiee: ProgressNotifiee = new ConsoleNotifiee,
-    discretizationType: DiscretizationType.DiscretizationType = DiscretizationType.EqualFrequency,
-    maxNumNumericBins: Int = 256,
-    maxNumCategoricalBins: Int = 256,
-    samplingType: SamplingType.SamplingType = SamplingType.SampleWithReplacement,
-    samplingRate: Double = 1.0,
-    mtry: Int = -1,
-    minSplitSize: Long = 2,
-    maxDepth: Int = -1,
-    numNodesPerIteration: Int = -1,
-    localTrainThreshold: Int = -1,
-    numSubTreesPerIteration: Int = -1): Option[SequoiaForest] = {
-    discretizeAndTrain(
-      treeType = TreeType.Classification_InfoGain,
-      input = input,
-      numTrees = numTrees,
-      outputPath = outputPath,
-      validationData = validationData,
-      categoricalFeatureIndices = categoricalFeatureIndices,
-      notifiee = notifiee,
-      discretizationType = discretizationType,
-      maxNumNumericBins = maxNumNumericBins,
-      maxNumCategoricalBins = maxNumCategoricalBins,
-      samplingType = samplingType,
-      samplingRate = samplingRate,
-      mtry = mtry, // -1 means automatically determined (using sqrt).
-      minSplitSize = minSplitSize, // 2 means fully growing trees.
-      maxDepth = maxDepth,
-      numNodesPerIteration = numNodesPerIteration, // -1 automatically determines this (depends on available memory).
-      localTrainThreshold = localTrainThreshold, // -1 automatically determines this (depends on available memory).
-      numSubTreesPerIteration = numSubTreesPerIteration) // -1 automatically determines this (depends on available memory).
-  }
-
-  /**
-   * Train a Sequoia Forest regression using variance for trees.
-   * @param input An RDD of label/features tuple. Label should be from 0...(K - 1) for K target classes. Features should be Doubles for both numeric and categorical features.
-   * @param numTrees Number of trees that we want to train.
-   * @param outputPath The path where output trees are written to.
-   * @param validationData Optional validation data array. If this is not None, then the trained model would also be stored in memory.
-   * @param categoricalFeatureIndices Indices of categorical features.
-   * @param notifiee A notifiee object that will receive training progress messages.
-   * @param discretizationType The discretization type to use for transforming features to Bin IDs.
-   * @param maxNumNumericBins Maximum number of bins to use for numeric features during discretization. It should be equal to or smaller than unsigned Byte/Short maximum.
-   * @param maxNumCategoricalBins Maximum number of bins to use for categorical features during discretization. The cardinality of categorical variables should be smaller than/equal to this.
-   * @param samplingType Sampling type (either with-replacement or without-replacement).
-   * @param samplingRate Sampling rate (between 0 and 1).
-   * @param mtry Number of random features per node. If this is -1, sqrt would be used.
-   * @param minSplitSize The minimum size of nodes that are eligible for splitting. 2 is the lowest number (means fully growing trees).
-   * @param maxDepth The maximum depth of the tree. -1 implies no limit.
-   * @param numNodesPerIteration The number of row filters to use in each RDD iteration for distributed node splits. -1 means that it'll be automatically determined (based on memory availability).
-   * @param localTrainThreshold The number of training samples a node sees before the whole sub-tree is trained locally. -1 means that it'll be automatically determined (based on memory availability).
-   * @param numSubTreesPerIteration The number of sub trees to train in each RDD iteration. -1 means that it'll be automatically determined (based on memory availability).
-   * @return A trained sequoia forest object if there's one in memory. Otherwise, the trees would be stored in the output path only and this would return None.
-   */
-  def trainRegression(
-    input: RDD[(Double, Array[Double])],
-    numTrees: Int,
-    outputPath: String,
-    validationData: Option[Array[(Double, Array[Double])]],
-    categoricalFeatureIndices: Set[Int] = Set[Int](),
-    notifiee: ProgressNotifiee = new ConsoleNotifiee,
-    discretizationType: DiscretizationType.DiscretizationType = DiscretizationType.EqualFrequency,
-    maxNumNumericBins: Int = 256,
-    maxNumCategoricalBins: Int = 256,
-    samplingType: SamplingType.SamplingType = SamplingType.SampleWithReplacement,
-    samplingRate: Double = 1.0,
-    mtry: Int = -1,
-    minSplitSize: Long = 2,
-    maxDepth: Int = -1,
-    numNodesPerIteration: Int = -1,
-    localTrainThreshold: Int = -1,
-    numSubTreesPerIteration: Int = -1): Option[SequoiaForest] = {
-    discretizeAndTrain(
-      treeType = TreeType.Regression_Variance,
-      input = input,
-      numTrees = numTrees,
-      outputPath = outputPath,
-      validationData = validationData,
-      categoricalFeatureIndices = categoricalFeatureIndices,
-      notifiee = notifiee,
-      discretizationType = discretizationType,
-      maxNumNumericBins = maxNumNumericBins,
-      maxNumCategoricalBins = maxNumCategoricalBins,
-      samplingType = samplingType,
-      samplingRate = samplingRate,
-      mtry = mtry, // -1 means automatically determined (using sqrt).
-      minSplitSize = minSplitSize, // 2 means fully growing trees.
-      maxDepth = maxDepth,
-      numNodesPerIteration = numNodesPerIteration, // -1 automatically determines this (depends on available memory).
-      localTrainThreshold = localTrainThreshold, // -1 automatically determines this (depends on available memory).
-      numSubTreesPerIteration = numSubTreesPerIteration) // -1 automatically determines this (depends on available memory).
-  }
-
-  /**
    * Train a Sequoia Forest after discretizing the input.
    * It's recommended that the input is not cached prior to running this, as this will quantize data and then cache them.
    * @param treeType Either classification (infogain) or regression.
    * @param input An RDD of label/features tuple. Label should be from 0...(K - 1) for K target classes. Features should be Doubles for both numeric and categorical features.
    * @param numTrees Number of trees that we want to train.
-   * @param outputPath The path where output trees are written to.
+   * @param outputStorage The storage object where output trees are written to.
    * @param validationData Optional validation data array. If this is not None, then the trained model would also be stored in memory.
    * @param categoricalFeatureIndices Indices of categorical features.
    * @param notifiee A notifiee object that will receive training progress messages.
@@ -178,7 +56,7 @@ object SequoiaForestTrainer {
     treeType: TreeType.TreeType,
     input: RDD[(Double, Array[Double])],
     numTrees: Int,
-    outputPath: String,
+    outputStorage: ForestStorage,
     validationData: Option[Array[(Double, Array[Double])]],
     categoricalFeatureIndices: Set[Int],
     notifiee: ProgressNotifiee,
@@ -228,33 +106,25 @@ object SequoiaForestTrainer {
 
     // Now transform data into bin IDs.
     val discretizedBaggedInput: DiscretizedData = maxBinCount match {
-      case binCount if binCount <= 256 => {
+      case binCount if binCount <= 256 =>
         notifiee.newStatusMessage("Discretizing the input data features into unsigned Byte bin IDs...")
         val txData = Discretizer.transformFeaturesToUnsignedByteBinIds(input, featureBins)
-
         notifiee.newStatusMessage("Bagging the input data...")
         val baggedInput = Bagger.bagRDD[Byte](txData, numTrees, samplingType, samplingRate)
-
         notifiee.newStatusMessage("Caching (and also materializing) the transformed data...")
         baggedInput.cache()
         notifiee.newStatusMessage("Finished caching the transformed data...")
-
         UnsignedByteRDD(baggedInput)
-      }
 
-      case binCount if binCount > 256 && binCount <= 65536 => {
+      case binCount if binCount > 256 && binCount <= 65536 =>
         notifiee.newStatusMessage("Discretizing the input data features into unsigned Short bin IDs...")
         val txData = Discretizer.transformFeaturesToUnsignedShortBinIds(input, featureBins)
-
         notifiee.newStatusMessage("Bagging the input data...")
         val baggedInput = Bagger.bagRDD[Short](txData, numTrees, samplingType, samplingRate)
-
         notifiee.newStatusMessage("Caching (and also materializing) the transformed data...")
         baggedInput.cache()
         notifiee.newStatusMessage("Finished caching the transformed data...")
-
         UnsignedShortRDD(baggedInput)
-      }
 
       case _ => throw new UnsupportedOperationException("Number of bins greater than 65536 is not supported.")
     }
@@ -264,25 +134,23 @@ object SequoiaForestTrainer {
     // Determine certain parameters automatically.
     val numFeatures = featureBins.length
     val numRandomFeaturesPerNode = mtry match {
-      case x if x == -1 => {
+      case x if x == -1 =>
         if (treeType == TreeType.Classification_InfoGain) {
           math.ceil(math.sqrt(numFeatures.toDouble)).toInt
         } else {
           math.ceil(numFeatures.toDouble / 3.0).toInt
         }
-      }
 
       case _ => mtry
     }
 
     val minSplitSizeActual = minSplitSize match {
-      case x if x == -1 => {
+      case x if x == -1 =>
         if (treeType == TreeType.Classification_InfoGain) {
           2
         } else {
           10
         }
-      }
 
       case _ => minSplitSize
     }
@@ -313,7 +181,7 @@ object SequoiaForestTrainer {
 
     // TODO: Can we use better heuristics to determine these numbers ?
     val nodesPerIter = numNodesPerIteration match {
-      case x if x == -1 => {
+      case x if x == -1 =>
         val avgNumBytesPerNode = if (treeType == TreeType.Classification_InfoGain) {
           avgNumBins * numRandomFeaturesPerNode.toDouble * (maxLabelValue + 1.0) * sizeOfLong.toDouble
         } else {
@@ -321,7 +189,6 @@ object SequoiaForestTrainer {
         }
 
         math.ceil(maxBytesInTransit / avgNumBytesPerNode / 2.0).toInt
-      }
 
       case _ => numNodesPerIteration
     }
@@ -357,7 +224,7 @@ object SequoiaForestTrainer {
         localTrainThreshold = subTreeMaxSamples,
         numSubTreesPerIteration = subTreeTrainers,
         storeModelInMemory = storeModelInMemory,
-        outputPath = Some(outputPath),
+        outputStorage = outputStorage,
         numClasses = numClasses
       ),
       notifiee,
@@ -386,13 +253,6 @@ object SequoiaForestTrainer {
     notifiee: ProgressNotifiee,
     validationData: Option[Array[(Double, Array[Double])]]): SequoiaForest = {
 
-    // If the output path is specified, one tree will get written to one output stream.
-    var outputStreams: Option[Array[OutputStream]] = None
-    if (options.outputPath != None) {
-      val hadoopConf: org.apache.hadoop.conf.Configuration = if (input.isLocal) null else input.getSparkContext.hadoopConfiguration
-      outputStreams = Some(createOutputStreams(options.outputPath.get, options.numTrees, options.treeType, hadoopConf))
-    }
-
     // Common structures we need for all types of inputs.
     val randGen = new Random()
     val numFeatures = featureBins.length
@@ -404,7 +264,8 @@ object SequoiaForestTrainer {
     val scheduledRowFilters = ScheduledRowFilters(numTrees)
     val nextNodeIdsPerTree = Array.fill[Int](numTrees)(2) // Node IDs to assign after the root. Root node Ids will all be 1's.
     val nodeDepths = Array.fill[mutable.Map[Int, Int]](numTrees)(mutable.Map[Int, Int]()) // Keeps track of currently being-trained nodes' depths.
-    val forest = SequoiaForest(trees, options.treeType)
+    val varImportance = VarImportance(numFeatures)
+    val forest = SequoiaForest(trees, options.treeType, varImportance)
 
     notifiee.newStatusMessage("Training Sequoia Forest with the following options:")
     notifiee.newStatusMessage("Tree Type : " + options.treeType.toString)
@@ -416,8 +277,8 @@ object SequoiaForestTrainer {
     notifiee.newStatusMessage("Number of Node Splits per Iteration : " + options.numNodesPerIteration)
     notifiee.newStatusMessage("Sub Tree Threshold : " + options.localTrainThreshold)
     notifiee.newStatusMessage("Number of Sub Trees per Iteration : " + options.numSubTreesPerIteration)
+    notifiee.newStatusMessage("Output Location : " + options.outputStorage.getLocation)
     if (options.numClasses != None) notifiee.newStatusMessage("Number of Target Classes : " + options.numClasses.get)
-    if (options.outputPath != None) notifiee.newStatusMessage("Output Path : " + options.outputPath.get)
     if (options.storeModelInMemory) notifiee.newStatusMessage("Storing the trained models in memory.") else notifiee.newStatusMessage("Trained models will not be stored in memory.")
 
     var featId = 0
@@ -426,13 +287,11 @@ object SequoiaForestTrainer {
       featId += 1
     }
 
+    options.outputStorage.initialize(numTrees, options.treeType)
+
     // First, we need to queue the requests for the root node split.
     var treeId = 0
     while (treeId < numTrees) {
-      if (outputStreams != None) {
-        SequoiaForestWriter.writeTreeHeader(treeId, outputStreams.get(treeId))
-      }
-
       trees(treeId) = SequoiaTree(treeId)
       treeSeeds(treeId) = randGen.nextInt()
       scheduledRowFilters.addRowFilter(treeId, new RootGetter())
@@ -487,9 +346,10 @@ object SequoiaForestTrainer {
         }
 
         // If the output streams object exists, we also write the node to the matching stream.
-        if (outputStreams != None) {
-          SequoiaForestWriter.writeNode(treeNode, outputStreams.get(trainedNodeInfo.treeId))
-        }
+        options.outputStorage.writeNode(trainedNodeInfo.treeId, trainedNodeInfo.depth, treeNode)
+
+        // Add variable importance from split nodes.
+        if (treeNode.splitImpurity != None) forest.varImportance.addVarImportance(treeNode)
       }
 
       // Now, let's see if there's any sub-tree training to do.
@@ -513,9 +373,12 @@ object SequoiaForestTrainer {
             forest.trees(parentTreeId).addSubTree(subTree)
           }
 
-          if (outputStreams != None) {
-            SequoiaForestWriter.writeSubTree(subTree, outputStreams.get(parentTreeId))
-          }
+          val subTreeDepth = nodeDepths(parentTreeId)(subTree.treeId)
+          nodeDepths(parentTreeId).remove(subTree.treeId)
+          options.outputStorage.writeSubTree(parentTreeId, subTreeDepth, subTree)
+
+          // Add variable importance from each sub tree split node.
+          subTree.nodes.values.foreach(node => if (node.splitImpurity != None) forest.varImportance.addVarImportance(node))
         }
       }
 
@@ -550,16 +413,8 @@ object SequoiaForestTrainer {
     }
 
     // Close the output streams if they exist.
-    if (outputStreams != None) {
-      treeId = 0
-      while (treeId < numTrees) {
-        SequoiaForestWriter.writeTreeEnd(outputStreams.get(treeId))
-        outputStreams.get(treeId).flush()
-        outputStreams.get(treeId).close()
-        treeId += 1
-      }
-    }
-
+    options.outputStorage.writeVarImportance(forest.varImportance)
+    options.outputStorage.close()
     forest
   }
 
@@ -617,7 +472,7 @@ object SequoiaForestTrainer {
 
       // Create an inner node.
       val split: NodeSplit = trainedNode.nodeSplit.get match {
-        case nodeSplitOnBinId: NumericSplitOnBinId => {
+        case nodeSplitOnBinId: NumericSplitOnBinId =>
           val nodeSplitOnBinId = trainedNode.nodeSplit.get.asInstanceOf[NumericSplitOnBinId]
           val featureId = nodeSplitOnBinId.featureId
           val splitValue = featureBins(featureId).asInstanceOf[NumericBins].bins(nodeSplitOnBinId.splitBinId).lower
@@ -626,15 +481,13 @@ object SequoiaForestTrainer {
             splitValue,
             nodeSplitOnBinId.leftId,
             nodeSplitOnBinId.rightId)
-        }
 
-        case nodeSplitOnBinId: CategoricalSplitOnBinId => {
+        case nodeSplitOnBinId: CategoricalSplitOnBinId =>
           val nodeSplitOnBinId = trainedNode.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId]
           val featureId = nodeSplitOnBinId.featureId
           CategoricalSplit(
             featureId,
             nodeSplitOnBinId.binIdToNodeIdMap)
-        }
       }
 
       SequoiaNode(nodeId, prediction, impurity, weight, Some(splitImpurity), Some(split))
@@ -686,47 +539,6 @@ object SequoiaForestTrainer {
       mse
     }
   }
-
-  /**
-   * Used to create an array of output streams, one element per tree.
-   * @param numTrees Number of trees in the forest.
-   * @param hadoopConf Optional hadoop configuration. If this is given, the output streams are created in HDFS.
-   * @return An array of output streams.
-   */
-  private def createOutputStreams(
-    outputPath: String,
-    numTrees: Int,
-    treeType: TreeType.TreeType,
-    hadoopConf: org.apache.hadoop.conf.Configuration = null): Array[OutputStream] = {
-    val hdfs = org.apache.hadoop.fs.FileSystem.get(hadoopConf)
-
-    // First write forest info into a separate file.
-    val forestInfoStream: OutputStream = if (hadoopConf == null) {
-      val outputFile = new File(outputPath, "forestInfo")
-      new FileOutputStream(outputFile)
-    } else {
-      hdfs.create(new Path(outputPath, "forestInfo"))
-    }
-
-    SequoiaForestWriter.writeForestInfo(numTrees, treeType, forestInfoStream)
-    forestInfoStream.close()
-
-    // Now, open tree output streams.
-    val outputStreams = new Array[OutputStream](numTrees)
-    var treeId = 0
-    while (treeId < numTrees) {
-      if (hadoopConf == null) {
-        val outputFile = new File(outputPath, "tree" + treeId)
-        outputStreams(treeId) = new FileOutputStream(outputFile)
-      } else {
-        outputStreams(treeId) = hdfs.create(new Path(outputPath, "tree" + treeId))
-      }
-
-      treeId += 1
-    }
-
-    outputStreams
-  }
 }
 
 /**
@@ -739,7 +551,7 @@ object SequoiaForestTrainer {
  * @param localTrainThreshold Number of samples to see at a node before training the rest locally.
  * @param numSubTreesPerIteration Number of sub trees to train per iteration.
  * @param storeModelInMemory Whether to store the trained model in memory.
- * @param outputPath Where to store the output model.
+ * @param outputStorage Where to store the output model.
  * @param numClasses Number of classes, if this is a classification model (required for classification).
  */
 case class SequoiaForestOptions(
@@ -752,7 +564,7 @@ case class SequoiaForestOptions(
   localTrainThreshold: Int,
   numSubTreesPerIteration: Int,
   storeModelInMemory: Boolean,
-  outputPath: Option[String],
+  outputStorage: ForestStorage,
   numClasses: Option[Int]) // Only for classification.
 
 /**

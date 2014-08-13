@@ -292,7 +292,7 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
           localTrainThreshold = 0,
           numSubTreesPerIteration = 0,
           storeModelInMemory = true,
-          outputPath = None,
+          outputStorage = new NullSinkForestStorage,
           numClasses = numClasses),
         new ConsoleNotifiee,
         None)
