@@ -248,7 +248,8 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
       var treeId = 0
       while (treeId < numTrees) {
         val curNodeId = row._2(treeId)
-        if (curNodeId >= 0) {
+        val rowCnt = row._1._3(treeId).toInt
+        if (rowCnt > 0 && curNodeId >= 0) {
           val nodeSplit = subTreeLookup.getNodeSplit(treeId, curNodeId)
           if (nodeSplit != null) {
             val childNodeId = nodeSplit.selectChildNode(featureHandlerLocal.convertToInt(row._1._2(nodeSplit.featureId)))
@@ -343,7 +344,8 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
         var treeId = 0
         while (treeId < numTrees) {
           val curNodeId = row._2(treeId)
-          if (curNodeId >= 0) { // It can be -1 if the sample was used in a node that was trained locally as a sub-tree.
+          val rowCnt = row._1._3(treeId).toInt
+          if (rowCnt > 0 && curNodeId >= 0) { // It can be -1 if the sample was used in a node that was trained locally as a sub-tree.
             val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
             if (nodeSplit != null) {
               val childNodeId = nodeSplit.selectChildNode(featureHandlerLocal.convertToInt(row._1._2(nodeSplit.featureId)))
@@ -388,7 +390,8 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
       var treeId = 0
       while (treeId < numTrees) {
         val curNodeId = row._2(treeId)
-        if (curNodeId >= 0) { // It can be -1 if the sample was used in a node that was trained locally as a sub-tree.
+        val rowCnt = row._1._3(treeId).toInt
+        if (rowCnt > 0 && curNodeId >= 0) { // It can be -1 if the sample was used in a node that was trained locally as a sub-tree.
           val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
           if (nodeSplit != null) {
             val childNodeId = nodeSplit.selectChildNode(featureHandlerLocal.convertToInt(row._1._2(nodeSplit.featureId)))
@@ -471,7 +474,8 @@ class DiscretizedDataLocal[@specialized(Byte, Short) T](data: Array[((Double, Ar
       var treeId = 0
       while (treeId < options.numTrees) {
         val curNodeId = row._2(treeId)
-        if (curNodeId >= 0) {
+        val rowCnt = row._1._3(treeId).toInt
+        if (rowCnt > 0 && curNodeId >= 0) {
           val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
           if (nodeSplit != null) {
             val childNodeId = nodeSplit.selectChildNode(featureHandler.convertToInt(row._1._2(nodeSplit.featureId)))
@@ -482,6 +486,7 @@ class DiscretizedDataLocal[@specialized(Byte, Short) T](data: Array[((Double, Ar
 
         treeId += 1
       }
+
       rowId += 1
     }
 
