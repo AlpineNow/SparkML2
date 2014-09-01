@@ -248,14 +248,19 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
       var treeId = 0
       while (treeId < numTrees) {
         val curNodeId = row._2(treeId)
-        val rowCnt = row._1._3(treeId).toInt
+        val rowCntByte = row._1._3(treeId)
+        val rowCnt = rowCntByte.toInt
         if (rowCnt > 0 && curNodeId >= 0) {
           val nodeSplit = subTreeLookup.getNodeSplit(treeId, curNodeId)
           if (nodeSplit != null) {
             val childNodeId = nodeSplit.selectChildNode(featureHandlerLocal.convertToInt(row._1._2(nodeSplit.featureId)))
             val subTreeHash = nodeSplit.getSubTreeHash(childNodeId)
             if (subTreeHash >= 0) {
-              output += ((subTreeHash, treeId, childNodeId, row))
+              val label = row._1._1
+              val features = row._1._2
+
+              // For shuffled data, we only need one tree appendage.
+              output += ((subTreeHash, treeId, childNodeId, ((label, features, Array[Byte](rowCntByte)), Array[Int](0))))
             }
           }
         }
