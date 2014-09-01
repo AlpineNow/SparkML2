@@ -24,6 +24,7 @@ import spark_ml.discretization._
 import java.io._
 import java.util.Calendar
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
 
 /**
  * The trainer for Sequoia Forest.
@@ -50,6 +51,7 @@ object SequoiaForestTrainer {
    * @param numNodesPerIteration The number of row filters to use in each RDD iteration for distributed node splits. -1 means that it'll be automatically determined (based on memory availability).
    * @param localTrainThreshold The number of training samples a node sees before the whole sub-tree is trained locally. -1 means that it'll be automatically determined (based on memory availability).
    * @param numSubTreesPerIteration The number of sub trees to train in each RDD iteration. -1 means that it'll be automatically determined (based on memory availability).
+   * @param storageLevel Spark persistence level (whether data are cached to memory, local-disk or both). Defaults to MEMORY_AND_DISK.
    * @return A trained sequoia forest object if there's one in memory. Otherwise, the trees would be stored in the output path only and this would return None.
    */
   def discretizeAndTrain(
@@ -70,7 +72,8 @@ object SequoiaForestTrainer {
     maxDepth: Int,
     numNodesPerIteration: Int,
     localTrainThreshold: Int,
-    numSubTreesPerIteration: Int): Option[SequoiaForest] = {
+    numSubTreesPerIteration: Int,
+    storageLevel: StorageLevel = StorageLevel.MEMORY_AND_DISK): Option[SequoiaForest] = {
 
     val maxBinCount = math.max(maxNumNumericBins, maxNumCategoricalBins)
     notifiee.newStatusMessage("The maximum number of bins in any feature is " + maxBinCount)
@@ -112,7 +115,7 @@ object SequoiaForestTrainer {
         notifiee.newStatusMessage("Bagging the input data...")
         val baggedInput = Bagger.bagRDD[Byte](txData, numTrees, samplingType, samplingRate)
         notifiee.newStatusMessage("Caching (and also materializing) the transformed data...")
-        baggedInput.cache()
+        baggedInput.persist(storageLevel)
         notifiee.newStatusMessage("Finished caching the transformed data...")
         UnsignedByteRDD(baggedInput)
 
@@ -122,7 +125,7 @@ object SequoiaForestTrainer {
         notifiee.newStatusMessage("Bagging the input data...")
         val baggedInput = Bagger.bagRDD[Short](txData, numTrees, samplingType, samplingRate)
         notifiee.newStatusMessage("Caching (and also materializing) the transformed data...")
-        baggedInput.cache()
+        baggedInput.persist(storageLevel)
         notifiee.newStatusMessage("Finished caching the transformed data...")
         UnsignedShortRDD(baggedInput)
 
