@@ -8,7 +8,7 @@ Use at your own risk.
 
 This package is provided under the Apache license 2.0.
 
-The current version is `0.1`.
+The current version is `0.2`.
 
 Any comments or questions should be directed to schung@alpinenow.com
 
@@ -155,10 +155,10 @@ Large data set (at least hundreds of millions of rows with a thousand features) 
 * Currently, categorical feature splits are dumb and sub-optimal. They are split K-ways (where K is the cardinality of the feature), regardless of the type of the forest (classification and regression).
 * The current implementation of the **SequoiaForestPredictor** command line tool is naive. For a large number of very large trees, the predictor would require a lot of memory in both driver and executors in order to fit the models in memory.
 
-### Selecting a proper limit of tree sizes.
+### Selecting a proper limit for tree sizes.
 
 For classification, not limiting trees seems like a good idea. For regression, having some limits through minSplitSize or maxDepth may help.
 
 ## Gradient Boosted Trees
 
-A powerful ensemble of boosted trees. Coming Soon.
+A powerful ensemble of boosted trees that can use an arbitrary loss function. Under development.
