@@ -66,6 +66,12 @@ trait ForestStorage {
   def writeVarImportance(varImportance: VarImportance): Unit
 
   /**
+   * Write the numbers of training samples for trees.
+   * @param sampleCounts The numbers of training samples for trees.
+   */
+  def writeSampleCounts(sampleCounts: Array[Long]): Unit
+
+  /**
    * Close the storage.
    */
   def close(): Unit
@@ -157,6 +163,12 @@ class HDFSForestStorage(hadoopConf: Configuration, path: String) extends FSFores
     SequoiaForestWriter.writeVariableImportance(varImportance, varImpStream)
     varImpStream.close()
   }
+
+  /**
+   * Write the numbers of training samples for trees.
+   * @param sampleCounts The numbers of training samples for trees.
+   */
+  override def writeSampleCounts(sampleCounts: Array[Long]): Unit = {}
 }
 
 /**
@@ -196,6 +208,12 @@ class LocalFSForestStorage(path: String) extends FSForestStorage {
     SequoiaForestWriter.writeVariableImportance(varImportance, varImpStream)
     varImpStream.close()
   }
+
+  /**
+   * Write the numbers of training samples for trees.
+   * @param sampleCounts The numbers of training samples for trees.
+   */
+  override def writeSampleCounts(sampleCounts: Array[Long]): Unit = {}
 }
 
 /**
@@ -208,5 +226,6 @@ class NullSinkForestStorage extends ForestStorage {
   override def writeNode(treeId: Int, depth: Int, node: SequoiaNode): Unit = {}
   override def writeSubTree(treeId: Int, depth: Int, subTree: SequoiaTree): Unit = {}
   override def writeVarImportance(varImportance: VarImportance): Unit = {}
+  override def writeSampleCounts(sampleCounts: Array[Long]): Unit = {}
   override def close(): Unit = {}
 }

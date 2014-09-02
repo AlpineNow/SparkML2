@@ -152,8 +152,13 @@ case class SequoiaTree(var treeId: Int) {
  * @param trees Trees in the forest.
  * @param treeType Type of trees (classification or regression).
  * @param varImportance Variable importance tracker.
+ * @param sampleCounts The number of training samples per tree.
  */
-case class SequoiaForest(trees: Array[SequoiaTree], treeType: TreeType.TreeType, varImportance: VarImportance) {
+case class SequoiaForest(
+    trees: Array[SequoiaTree],
+    treeType: TreeType.TreeType,
+    varImportance: VarImportance,
+    sampleCounts: Array[Long]) {
   /**
    * Predict from the features.
    * @param features A double array of features.
@@ -405,7 +410,8 @@ object SequoiaForestReader {
     val varImportance = SequoiaForestReader.readVarImportance(varImpStream)
     varImpStream.close()
 
-    SequoiaForest(trees, treeType, varImportance)
+    // TODO: Properly write/load numbers of training samples.
+    SequoiaForest(trees, treeType, varImportance, Array.fill[Long](numTrees)(0))
   }
 
   /**

@@ -268,7 +268,8 @@ object SequoiaForestTrainer {
     val nextNodeIdsPerTree = Array.fill[Int](numTrees)(2) // Node IDs to assign after the root. Root node Ids will all be 1's.
     val nodeDepths = Array.fill[mutable.Map[Int, Int]](numTrees)(mutable.Map[Int, Int]()) // Keeps track of currently being-trained nodes' depths.
     val varImportance = VarImportance(numFeatures)
-    val forest = SequoiaForest(trees, options.treeType, varImportance)
+    val sampleCounts = Array.fill[Long](numTrees)(0) // We want to know how many training samples we have for each tree.
+    val forest = SequoiaForest(trees, options.treeType, varImportance, sampleCounts)
 
     notifiee.newStatusMessage("Training Sequoia Forest with the following options:")
     notifiee.newStatusMessage("Tree Type : " + options.treeType.toString)
@@ -334,6 +335,13 @@ object SequoiaForestTrainer {
       // Create tree nodes and process splits if they exist.
       while (trainedNodes.hasNext) {
         val trainedNodeInfo = trainedNodes.next()
+
+        // The root node (nodeId == 1) always has the count of all the training samples.
+        // We want to store this in our output.
+        if (trainedNodeInfo.nodeId == 1) {
+          forest.sampleCounts(trainedNodeInfo.treeId) = trainedNodeInfo.weight.toLong
+        }
+
         val treeNode = processTrainedNode(
           trainedNodeInfo,
           scheduledRowFilters,
@@ -417,6 +425,7 @@ object SequoiaForestTrainer {
 
     // Close the output streams if they exist.
     options.outputStorage.writeVarImportance(forest.varImportance)
+    options.outputStorage.writeSampleCounts(forest.sampleCounts)
     options.outputStorage.close()
     forest
   }
