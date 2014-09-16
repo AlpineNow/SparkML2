@@ -72,7 +72,7 @@ object CategoryToNumberMapRunner {
     try {
       val inputRDD = sc.textFile(config.inputPath)
       val firstLine = inputRDD.first()
-      val firstLineSplit = firstLine.split(config.delimiter)
+      val firstLineSplit = firstLine.split(config.delimiter, -1)
       val numColumns = firstLineSplit.length
       val headerExists = config.headerExists
       val delimiter = config.delimiter
@@ -138,7 +138,7 @@ object CategoryToNumberMapRunner {
             headerWritten = true
             line
           } else {
-            val lineElems = line.split(delimiter)
+            val lineElems = line.split(delimiter, -1)
             var outputLine = ""
             cfor(0)(_ < header.length, _ + 1)(
               idx => {

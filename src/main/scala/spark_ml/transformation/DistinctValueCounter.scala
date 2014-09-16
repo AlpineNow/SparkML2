@@ -30,7 +30,7 @@ object DistinctValueCounter {
       }
 
       lines.foreach((line: String) => {
-        val lineElems = line.split(delimiter)
+        val lineElems = line.split(delimiter, -1)
         cfor(0)(_ < colIndices.length, _ + 1)(
           i => {
             val colVal = lineElems(colIndices(i)).trim
