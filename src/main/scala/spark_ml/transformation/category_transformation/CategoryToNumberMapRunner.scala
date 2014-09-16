@@ -129,6 +129,8 @@ object CategoryToNumberMapRunner {
       println("Used memory : " + ((Runtime.getRuntime.totalMemory() - Runtime.getRuntime.freeMemory()).toDouble / 1024.0 / 1024.0) + " MB")
       println("Free memory : " + (Runtime.getRuntime.freeMemory().toDouble / 1024.0 / 1024.0) + " MB")
 
+      val broadcastMap = sc.broadcast(distinctValueMap)
+
       // Now that we have the distinct value map, apply it.
       val convertedRDD = inputRDD.mapPartitionsWithIndex((partitionIdx: Int, lines: Iterator[String]) => {
         var headerWritten = false
@@ -144,8 +146,8 @@ object CategoryToNumberMapRunner {
               idx => {
                 val colName = header(idx)
                 val outputDelimiter = if (idx == 0) "" else delimiter
-                if (distinctValueMap.contains(colName)) {
-                  outputLine += outputDelimiter + distinctValueMap(colName)(lineElems(idx)).toString
+                if (broadcastMap.value.contains(colName)) {
+                  outputLine += outputDelimiter + broadcastMap.value(colName)(lineElems(idx)).toString
                 } else {
                   outputLine += outputDelimiter + lineElems(idx)
                 }
