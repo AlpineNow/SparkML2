@@ -147,7 +147,11 @@ object CategoryToNumberMapRunner {
                 val colName = header(idx)
                 val outputDelimiter = if (idx == 0) "" else delimiter
                 if (broadcastMap.value.contains(colName)) {
-                  outputLine += outputDelimiter + broadcastMap.value(colName)(lineElems(idx)).toString
+                  if (broadcastMap.value(colName).contains(lineElems(idx))) {
+                    outputLine += outputDelimiter + broadcastMap.value(colName)(lineElems(idx)).toString
+                  } else {
+                    outputLine += outputDelimiter + broadcastMap.value(colName)("").toString
+                  }
                 } else {
                   outputLine += outputDelimiter + lineElems(idx)
                 }
