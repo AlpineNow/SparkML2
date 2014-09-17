@@ -3,12 +3,16 @@ package spark_ml.transformation.category_transformation
 import scala.collection.mutable
 
 import org.apache.spark.{ SparkContext, SparkConf }
+import org.apache.hadoop.fs.{ Path, FileSystem }
 import spire.implicits._
 import scopt.OptionParser
+import java.io.{ ObjectOutputStream, ObjectInputStream }
 
 case class CategoryCoarsenRunnerConfig(
   inputPath: String = null,
   outputPath: String = null,
+  mapPath: String = null,
+  readPreviousMap: Boolean = false,
   delimiter: String = ",",
   headerExists: Boolean = false,
   colIndices: Array[Int] = Array[Int](),
@@ -28,6 +32,13 @@ object CategoryCoarsenRunner {
         .text("Output path (directory) where the converted files will be stored.")
         .required()
         .action((x, c) => c.copy(outputPath = x))
+      opt[String]("mapPath")
+        .text("Map path (directory) where the map structure exists or will be stored.")
+        .required()
+        .action((x, c) => c.copy(mapPath = x))
+      opt[Boolean]("readPreviousMap")
+        .text("Whether we want to read a previous map and apply it.")
+        .action((x, c) => c.copy(readPreviousMap = x))
       opt[String]("delimiter")
         .text("Delimiter string for the input data. The default is \",\"")
         .action((x, c) => c.copy(delimiter = x))
@@ -54,6 +65,7 @@ object CategoryCoarsenRunner {
   def run(config: CategoryCoarsenRunnerConfig): Unit = {
     val conf = new SparkConf().setAppName("CategoryCoarsenRunner")
     val sc = new SparkContext(conf)
+    val hdfs = FileSystem.get(sc.hadoopConfiguration)
 
     try {
       val inputRDD = sc.textFile(config.inputPath)
@@ -74,7 +86,14 @@ object CategoryCoarsenRunner {
         colNames
       }
 
-      val catValMap = {
+      val catValMap = if (config.readPreviousMap) {
+        val mapInputStream = hdfs.open(new Path(config.mapPath))
+        val objectInput = new ObjectInputStream(mapInputStream)
+        val m = objectInput.readObject().asInstanceOf[mutable.Map[String, mutable.Map[Int, Int]]]
+        objectInput.close()
+        mapInputStream.close()
+        m
+      } else {
         // Print the current memory usage.
         println("Memory usage before performing category value counting.")
         println("Maximum memory : " + (Runtime.getRuntime.maxMemory().toDouble / 1024.0 / 1024.0) + " MB")
@@ -101,6 +120,13 @@ object CategoryCoarsenRunner {
             colNameToM.put(header(colIdx), m(colIdx))
           }
         )
+
+        val mapOutputStream = hdfs.create(new Path(config.mapPath))
+        val objectOutput = new ObjectOutputStream(mapOutputStream)
+        objectOutput.writeObject(colNameToM)
+        objectOutput.flush()
+        objectOutput.close()
+        mapOutputStream.close()
 
         colNameToM
       }
