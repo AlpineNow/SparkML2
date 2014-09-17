@@ -149,8 +149,10 @@ object CategoryToNumberMapRunner {
                 if (broadcastMap.value.contains(colName)) {
                   if (broadcastMap.value(colName).contains(lineElems(idx))) {
                     outputLine += outputDelimiter + broadcastMap.value(colName)(lineElems(idx)).toString
-                  } else {
+                  } else if (broadcastMap.value(colName).contains("")) {
                     outputLine += outputDelimiter + broadcastMap.value(colName)("").toString
+                  } else {
+                    outputLine += outputDelimiter + broadcastMap.value(colName).size.toString
                   }
                 } else {
                   outputLine += outputDelimiter + lineElems(idx)
