@@ -19,6 +19,7 @@ package spark_ml.sequoia_forest
 
 import scopt.OptionParser
 import org.apache.spark.{ SparkContext, SparkConf }
+import breeze.numerics.log2
 
 /**
  * Config object to be set by command line arguments.
@@ -31,6 +32,7 @@ case class PredictorConfig(
   labelIndex: Int = -1,
   outputFieldIndices: Set[Int] = Set[Int](0),
   indicesToIgnore: Set[Int] = Set[Int](),
+  computeLogLoss: Boolean = false,
   pauseDuration: Int = 10)
 
 /**
@@ -67,6 +69,9 @@ object SequoiaForestPredictor {
       opt[String]("indicesToIgnore")
         .text("A comma separated indices of columns to be ignored (not used as features). The number of used features should be the same as the number of features used for training and should be in the same order as the training set. The default is empty (no columns are ignored).")
         .action((x, c) => c.copy(indicesToIgnore = x.split(",").map(value => value.toInt).toSet))
+      opt[Boolean]("computeLogLoss")
+        .text("Whether to compute log loss. Only valid for the case of binary classifications.")
+        .action((x, c) => c.copy(computeLogLoss = x))
       opt[Int]("pauseDuration")
         .text("Time to pause after finished with predictions in seconds. This is useful for some Yarn clusters where the log messages are not stored after jobs are finished. The default is 10 seconds.")
         .action((x, c) => c.copy(pauseDuration = x))
@@ -100,6 +105,7 @@ object SequoiaForestPredictor {
       val labelIndex = config.labelIndex
       val delimiter = config.delimiter
       val outputPath = config.outputPath
+      val computeLogLoss = config.computeLogLoss
 
       val forest: SequoiaForest = SequoiaForestReader.readForest(config.forestPath, sc.hadoopConfiguration)
       val treeType = forest.treeType
@@ -118,7 +124,13 @@ object SequoiaForestPredictor {
         while (col < elems.length) {
           if (col != labelIndex && !indicesToIgnore.contains(col)) {
             // Feature indices get shifted after subtracting the label index and the ignored columns.
-            features(featId) = elems(col).toDouble
+            val featureValue = if (elems(col) == "") {
+              Double.NaN
+            } else {
+              elems(col).toDouble
+            }
+
+            features(featId) = featureValue
             featId += 1
           }
 
@@ -157,9 +169,19 @@ object SequoiaForestPredictor {
           val prediction = row._1._3
           val label = row._2
           if (treeType == TreeType.Classification_InfoGain) {
-            if (label == prediction) (1.0, 1.0) else (0.0, 1.0)
+            if (computeLogLoss) {
+              val prob = if (prediction(0)._1 == 1.0) {
+                prediction(0)._2
+              } else {
+                1.0 - prediction(0)._2
+              }
+
+              (label * log2(prob) + (1.0 - label) * log2(1.0 - prob), 1.0)
+            } else {
+              if (label == prediction(0)._1) (1.0, 1.0) else (0.0, 1.0)
+            }
           } else {
-            val error = label - prediction
+            val error = label - prediction(0)._1
             (error * error, 1.0)
           }
         }).reduce((a, b) => {
@@ -175,10 +197,15 @@ object SequoiaForestPredictor {
 
         // Print validation results.
         if (treeType == TreeType.Classification_InfoGain) {
-          println("Accuracy for classification:")
-          println("Num Correct : " + validationStats._1.toInt)
-          println("Num Total : " + validationStats._2.toInt)
-          println("Accuracy : " + validationStats._1 / validationStats._2)
+          if (computeLogLoss) {
+            println("Log loss for binary classification:")
+            println(validationStats._1 / -validationStats._2)
+          } else {
+            println("Accuracy for classification:")
+            println("Num Correct : " + validationStats._1.toInt)
+            println("Num Total : " + validationStats._2.toInt)
+            println("Accuracy : " + validationStats._1 / validationStats._2)
+          }
         } else {
           println("MSE for regression:")
           println("Mean Squared Error : " + validationStats._1)

@@ -57,17 +57,20 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest.trees.length === 1)
-    assert(forest.trees(0).getNodeCount === 16)
+    assert(forest.trees(0).getNodeCount === 19)
     assert(forest.trees(0).subTrees.size === 0)
     assert(forest.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest.trees(0).nodes(1).impurity, 1.916716186961402))
 
-    testDataRaw.foreach(row => assert(forest.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
 
     // Train with local sub-tree training.
     val forest2 = SequoiaForestTrainer.train(
@@ -84,17 +87,20 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest2.trees.length === 1)
-    assert(forest2.trees(0).getNodeCount === 16)
+    assert(forest2.trees(0).getNodeCount === 19)
     assert(forest2.trees(0).subTrees.size === 4)
     assert(forest2.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 1.916716186961402))
 
-    testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
 
     // Train without local sub-tree training.
     val forest3 = SequoiaForestTrainer.train(
@@ -111,12 +117,15 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest3.trees.length === 1)
-    assert(forest3.trees(0).getNodeCount === 10)
+    assert(forest3.trees(0).getNodeCount === 7)
     assert(forest3.trees(0).subTrees.size === 0)
     assert(forest3.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest3.trees(0).nodes(1).impurity, 1.916716186961402))
@@ -136,17 +145,20 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest4.trees.length === 1)
-    assert(forest4.trees(0).getNodeCount === 10)
-    assert(forest4.trees(0).subTrees.size === 4)
+    assert(forest4.trees(0).getNodeCount === 7)
+    assert(forest4.trees(0).subTrees.size === 2)
     assert(forest4.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest4.trees(0).nodes(1).impurity, 1.916716186961402))
 
-    testDataRaw.foreach(row => assert(forest3.predict(row._2) === forest4.predict(row._2)))
+    testDataRaw.foreach(row => assert(forest3.predict(row._2)(0)._1 === forest4.predict(row._2)(0)._1))
 
     // Write tree to a local output stream.
     val outputStream = new ByteArrayOutputStream()
@@ -164,14 +176,14 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     testDataRaw.foreach(row => assert(forest4.trees(0).predict(row._2) === readTree.predict(row._2)))
 
     // Make sure that the variable importances are as expected.
-    assert(compareDouble(forest.varImportance.featureImportance(0), 45.6578))
-    assert(compareDouble(forest.varImportance.featureImportance(1), 11.8436))
-    assert(compareDouble(forest2.varImportance.featureImportance(0), 45.6578))
-    assert(compareDouble(forest2.varImportance.featureImportance(1), 11.8436))
-    assert(compareDouble(forest3.varImportance.featureImportance(0), 29.1285))
-    assert(compareDouble(forest3.varImportance.featureImportance(1), 11.8436))
-    assert(compareDouble(forest4.varImportance.featureImportance(0), 29.1285))
-    assert(compareDouble(forest4.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest.varImportance.featureImportance(0), 41.6997))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 15.8018))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 41.6997))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 15.8018))
+    assert(compareDouble(forest3.varImportance.featureImportance(0), 24.7800))
+    assert(compareDouble(forest3.varImportance.featureImportance(1), 11.1048))
+    assert(compareDouble(forest4.varImportance.featureImportance(0), 24.7800))
+    assert(compareDouble(forest4.varImportance.featureImportance(1), 11.1048))
   }
 
   test("Train a tree 2 - unsigned Short features RDD") {
@@ -205,17 +217,20 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest.trees.length === 1)
-    assert(forest.trees(0).getNodeCount === 16)
+    assert(forest.trees(0).getNodeCount === 19)
     assert(forest.trees(0).subTrees.size === 0)
     assert(forest.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest.trees(0).nodes(1).impurity, 1.916716186961402))
 
-    testDataRaw.foreach(row => assert(forest.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
 
     // Train with local sub-tree training.
     val forest2 = SequoiaForestTrainer.train(
@@ -232,23 +247,26 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest2.trees.length === 1)
-    assert(forest2.trees(0).getNodeCount === 16)
+    assert(forest2.trees(0).getNodeCount === 19)
     assert(forest2.trees(0).subTrees.size === 4)
     assert(forest2.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 1.916716186961402))
 
-    testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
 
     // Make sure that the variable importances are as expected.
-    assert(compareDouble(forest.varImportance.featureImportance(0), 45.6578))
-    assert(compareDouble(forest.varImportance.featureImportance(1), 11.8436))
-    assert(compareDouble(forest2.varImportance.featureImportance(0), 45.6578))
-    assert(compareDouble(forest2.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest.varImportance.featureImportance(0), 41.6997))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 15.8018))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 41.6997))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 15.8018))
   }
 
   test("Train a tree 3 - unsigned Byte features Local") {
@@ -283,17 +301,20 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest.trees.length === 1)
-    assert(forest.trees(0).getNodeCount === 16)
+    assert(forest.trees(0).getNodeCount === 19)
     assert(forest.trees(0).subTrees.size === 0)
     assert(forest.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest.trees(0).nodes(1).impurity, 1.916716186961402))
 
-    testDataRaw.foreach(row => assert(forest.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
 
     // Train with local sub-tree training.
     val forest2 = SequoiaForestTrainer.train(
@@ -310,23 +331,26 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest2.trees.length === 1)
-    assert(forest2.trees(0).getNodeCount === 16)
+    assert(forest2.trees(0).getNodeCount === 19)
     assert(forest2.trees(0).subTrees.size === 0)
     assert(forest2.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 1.916716186961402))
 
-    testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
 
     // Make sure that the variable importances are as expected.
-    assert(compareDouble(forest.varImportance.featureImportance(0), 45.6578))
-    assert(compareDouble(forest.varImportance.featureImportance(1), 11.8436))
-    assert(compareDouble(forest2.varImportance.featureImportance(0), 45.6578))
-    assert(compareDouble(forest2.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest.varImportance.featureImportance(0), 41.6997))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 15.8018))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 41.6997))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 15.8018))
   }
 
   test("Train a tree 4 - unsigned Short features Local") {
@@ -361,17 +385,20 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest.trees.length === 1)
-    assert(forest.trees(0).getNodeCount === 16)
+    assert(forest.trees(0).getNodeCount === 19)
     assert(forest.trees(0).subTrees.size === 0)
     assert(forest.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest.trees(0).nodes(1).impurity, 1.916716186961402))
 
-    testDataRaw.foreach(row => assert(forest.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
 
     // Train with local sub-tree training.
     val forest2 = SequoiaForestTrainer.train(
@@ -388,23 +415,109 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(4)),
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest2.trees.length === 1)
-    assert(forest2.trees(0).getNodeCount === 16)
+    assert(forest2.trees(0).getNodeCount === 19)
     assert(forest2.trees(0).subTrees.size === 0)
     assert(forest2.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 1.916716186961402))
 
-    testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
 
     // Make sure that the variable importances are as expected.
-    assert(compareDouble(forest.varImportance.featureImportance(0), 45.6578))
-    assert(compareDouble(forest.varImportance.featureImportance(1), 11.8436))
-    assert(compareDouble(forest2.varImportance.featureImportance(0), 45.6578))
-    assert(compareDouble(forest2.varImportance.featureImportance(1), 11.8436))
+    assert(compareDouble(forest.varImportance.featureImportance(0), 41.6997))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 15.8018))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 41.6997))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 15.8018))
+  }
+
+  test("Train a tree 5 - unsigned Byte features RDD with NaN features") {
+    val testDataRDD = sc.parallelize(TestDataGenerator.labeledData6, 3)
+    val testDataRaw = testDataRDD.collect()
+    val (maxLabelValue, bins) = EqualWidthDiscretizer.discretizeFeatures(
+      testDataRDD,
+      Set[Int](1),
+      labelIsCategorical = true,
+      Map[String, String](StringConstants.NumBins_Numeric -> "6", StringConstants.MaxCardinality_Categoric -> "1000"))
+
+    assert(maxLabelValue === 3.0)
+
+    val txData = Discretizer.transformFeaturesToUnsignedByteBinIds(testDataRDD, bins)
+
+    // No bagging (100% sampling without replacement).
+    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0)
+
+    // Train without local sub-tree training.
+    val forest = SequoiaForestTrainer.train(
+      UnsignedByteRDD(inputRDD),
+      bins,
+      SequoiaForestOptions(
+        numTrees = 1,
+        treeType = TreeType.Classification_InfoGain,
+        mtry = 100,
+        minSplitSize = 2,
+        maxDepth = -1,
+        numNodesPerIteration = 2,
+        localTrainThreshold = 0,
+        numSubTreesPerIteration = 0,
+        storeModelInMemory = true,
+        outputStorage = new NullSinkForestStorage,
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
+      new ConsoleNotifiee,
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
+
+    assert(forest.trees.length === 1)
+    assert(forest.trees(0).getNodeCount === 18)
+    assert(forest.trees(0).subTrees.size === 0)
+    assert(forest.trees(0).nodes(1).prediction === 2.0)
+    assert(compareDouble(forest.trees(0).nodes(1).impurity, 1.916716186961402))
+
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
+
+    // Train with local sub-tree training.
+    val forest2 = SequoiaForestTrainer.train(
+      UnsignedByteRDD(inputRDD),
+      bins,
+      SequoiaForestOptions(
+        numTrees = 1,
+        treeType = TreeType.Classification_InfoGain,
+        mtry = 100,
+        minSplitSize = 2,
+        maxDepth = -1,
+        numNodesPerIteration = 1000,
+        localTrainThreshold = 10,
+        numSubTreesPerIteration = 1000,
+        storeModelInMemory = true,
+        outputStorage = new NullSinkForestStorage,
+        numClasses = Some(4),
+        imputationType = ImputationType.SplitOnMissing),
+      new ConsoleNotifiee,
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
+
+    assert(forest2.trees.length === 1)
+    assert(forest2.trees(0).getNodeCount === 18)
+    assert(forest2.trees(0).subTrees.size === 7)
+    assert(forest2.trees(0).nodes(1).prediction === 2.0)
+    assert(compareDouble(forest2.trees(0).nodes(1).impurity, 1.916716186961402))
+
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
+
+    // Make sure that the variable importances are as expected.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 35.0603))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 22.4412))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 35.0603))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 22.4412))
   }
 
   test("Train a regression tree 1 - unsigned Byte features RDD") {
@@ -438,18 +551,21 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest.trees.length === 1)
-    assert(forest.trees(0).getNodeCount === 16)
+    assert(forest.trees(0).getNodeCount === 19)
     assert(forest.trees(0).subTrees.size === 0)
     assert(compareDouble(forest.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest.trees(0).nodes(1).impurity, 0.9733333))
     assert(forest.trees(0).nodes(1).weight === 30)
 
-    testDataRaw.foreach(row => assert(forest.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
 
     // Train with local sub-tree training.
     val forest2 = SequoiaForestTrainer.train(
@@ -466,17 +582,20 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest2.trees.length === 1)
-    assert(forest2.trees(0).getNodeCount === 16)
+    assert(forest2.trees(0).getNodeCount === 19)
     assert(forest2.trees(0).subTrees.size === 4)
     assert(compareDouble(forest2.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 0.9733333))
 
-    testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
 
     // Train without local sub-tree training.
     val forest3 = SequoiaForestTrainer.train(
@@ -493,12 +612,15 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest3.trees.length === 1)
-    assert(forest3.trees(0).getNodeCount === 10)
+    assert(forest3.trees(0).getNodeCount === 7)
     assert(forest3.trees(0).subTrees.size === 0)
     assert(compareDouble(forest3.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest3.trees(0).nodes(1).impurity, 0.9733333))
@@ -518,27 +640,30 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest4.trees.length === 1)
-    assert(forest4.trees(0).getNodeCount === 10)
-    assert(forest4.trees(0).subTrees.size === 4)
+    assert(forest4.trees(0).getNodeCount === 7)
+    assert(forest4.trees(0).subTrees.size === 2)
     assert(compareDouble(forest4.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest4.trees(0).nodes(1).impurity, 0.9733333))
 
-    testDataRaw.foreach(row => assert(forest3.predict(row._2) === forest4.predict(row._2)))
+    testDataRaw.foreach(row => assert(forest3.predict(row._2)(0)._1 === forest4.predict(row._2)(0)._1))
 
     // Compare the variable importance with expected values.
-    assert(compareDouble(forest.varImportance.featureImportance(0), 23.2))
-    assert(compareDouble(forest.varImportance.featureImportance(1), 6))
-    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.2))
-    assert(compareDouble(forest2.varImportance.featureImportance(1), 6))
-    assert(compareDouble(forest3.varImportance.featureImportance(0), 18.5333))
-    assert(compareDouble(forest3.varImportance.featureImportance(1), 6))
-    assert(compareDouble(forest4.varImportance.featureImportance(0), 18.5333))
-    assert(compareDouble(forest4.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest.varImportance.featureImportance(0), 23.05))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 6.15))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.05))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 6.15))
+    assert(compareDouble(forest3.varImportance.featureImportance(0), 18.0083))
+    assert(compareDouble(forest3.varImportance.featureImportance(1), 5.4))
+    assert(compareDouble(forest4.varImportance.featureImportance(0), 18.0083))
+    assert(compareDouble(forest4.varImportance.featureImportance(1), 5.4))
   }
 
   test("Train a regression tree 2 - unsigned Short features RDD") {
@@ -572,18 +697,21 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest.trees.length === 1)
-    assert(forest.trees(0).getNodeCount === 16)
+    assert(forest.trees(0).getNodeCount === 19)
     assert(forest.trees(0).subTrees.size === 0)
     assert(compareDouble(forest.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest.trees(0).nodes(1).impurity, 0.9733333))
     assert(forest.trees(0).nodes(1).weight === 30)
 
-    testDataRaw.foreach(row => assert(forest.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
 
     // Train with local sub-tree training.
     val forest2 = SequoiaForestTrainer.train(
@@ -600,23 +728,26 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest2.trees.length === 1)
-    assert(forest2.trees(0).getNodeCount === 16)
+    assert(forest2.trees(0).getNodeCount === 19)
     assert(forest2.trees(0).subTrees.size === 4)
     assert(compareDouble(forest2.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 0.9733333))
 
-    testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
 
     // Compare the variable importance with expected values.
-    assert(compareDouble(forest.varImportance.featureImportance(0), 23.2))
-    assert(compareDouble(forest.varImportance.featureImportance(1), 6))
-    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.2))
-    assert(compareDouble(forest2.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest.varImportance.featureImportance(0), 23.05))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 6.15))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.05))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 6.15))
   }
 
   test("Train a regression tree 3 - unsigned Byte features Local") {
@@ -651,18 +782,21 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest.trees.length === 1)
-    assert(forest.trees(0).getNodeCount === 16)
+    assert(forest.trees(0).getNodeCount === 19)
     assert(forest.trees(0).subTrees.size === 0)
     assert(compareDouble(forest.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest.trees(0).nodes(1).impurity, 0.9733333))
     assert(forest.trees(0).nodes(1).weight === 30)
 
-    testDataRaw.foreach(row => assert(forest.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
 
     // Train with local sub-tree training.
     val forest2 = SequoiaForestTrainer.train(
@@ -679,23 +813,26 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest2.trees.length === 1)
-    assert(forest2.trees(0).getNodeCount === 16)
+    assert(forest2.trees(0).getNodeCount === 19)
     assert(forest2.trees(0).subTrees.size === 0)
     assert(compareDouble(forest2.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 0.9733333))
 
-    testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
 
     // Compare the variable importance with expected values.
-    assert(compareDouble(forest.varImportance.featureImportance(0), 23.2))
-    assert(compareDouble(forest.varImportance.featureImportance(1), 6))
-    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.2))
-    assert(compareDouble(forest2.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest.varImportance.featureImportance(0), 23.05))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 6.15))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.05))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 6.15))
   }
 
   test("Train a regression tree 4 - unsigned Short features Local") {
@@ -730,18 +867,21 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 0,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest.trees.length === 1)
-    assert(forest.trees(0).getNodeCount === 16)
+    assert(forest.trees(0).getNodeCount === 19)
     assert(forest.trees(0).subTrees.size === 0)
     assert(compareDouble(forest.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest.trees(0).nodes(1).impurity, 0.9733333))
     assert(forest.trees(0).nodes(1).weight === 30)
 
-    testDataRaw.foreach(row => assert(forest.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
 
     // Train with local sub-tree training.
     val forest2 = SequoiaForestTrainer.train(
@@ -758,22 +898,109 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 1000,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None),
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
       new ConsoleNotifiee,
-      None)
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
 
     assert(forest2.trees.length === 1)
-    assert(forest2.trees(0).getNodeCount === 16)
+    assert(forest2.trees(0).getNodeCount === 19)
     assert(forest2.trees(0).subTrees.size === 0)
     assert(compareDouble(forest2.trees(0).nodes(1).prediction, 1.4))
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 0.9733333))
 
-    testDataRaw.foreach(row => assert(forest2.predict(row._2) === row._1))
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
 
     // Compare the variable importance with expected values.
-    assert(compareDouble(forest.varImportance.featureImportance(0), 23.2))
-    assert(compareDouble(forest.varImportance.featureImportance(1), 6))
-    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.2))
-    assert(compareDouble(forest2.varImportance.featureImportance(1), 6))
+    assert(compareDouble(forest.varImportance.featureImportance(0), 23.05))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 6.15))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 23.05))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 6.15))
+  }
+
+  test("Train a regression tree 5 - unsigned Byte features RDD with NaN features") {
+    val testDataRDD = sc.parallelize(TestDataGenerator.labeledData6, 3)
+    val testDataRaw = testDataRDD.collect()
+    val (maxLabelValue, bins) = EqualWidthDiscretizer.discretizeFeatures(
+      testDataRDD,
+      Set[Int](1),
+      labelIsCategorical = true,
+      Map[String, String](StringConstants.NumBins_Numeric -> "6", StringConstants.MaxCardinality_Categoric -> "1000"))
+
+    assert(maxLabelValue === 3.0)
+
+    val txData = Discretizer.transformFeaturesToUnsignedByteBinIds(testDataRDD, bins)
+
+    // No bagging (100% sampling without replacement).
+    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0)
+
+    // Train without local sub-tree training.
+    val forest = SequoiaForestTrainer.train(
+      UnsignedByteRDD(inputRDD),
+      bins,
+      SequoiaForestOptions(
+        numTrees = 1,
+        treeType = TreeType.Regression_Variance,
+        mtry = 100,
+        minSplitSize = 2,
+        maxDepth = -1,
+        numNodesPerIteration = 2,
+        localTrainThreshold = 0,
+        numSubTreesPerIteration = 0,
+        storeModelInMemory = true,
+        outputStorage = new NullSinkForestStorage,
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
+      new ConsoleNotifiee,
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
+
+    assert(forest.trees.length === 1)
+    assert(forest.trees(0).getNodeCount === 23)
+    assert(forest.trees(0).subTrees.size === 0)
+    assert(compareDouble(forest.trees(0).nodes(1).prediction, 1.4))
+    assert(compareDouble(forest.trees(0).nodes(1).impurity, 0.9733333))
+    assert(forest.trees(0).nodes(1).weight === 30)
+
+    testDataRaw.foreach(row => assert(forest.predict(row._2)(0)._1 === row._1))
+
+    // Train with local sub-tree training.
+    val forest2 = SequoiaForestTrainer.train(
+      UnsignedByteRDD(inputRDD),
+      bins,
+      SequoiaForestOptions(
+        numTrees = 1,
+        treeType = TreeType.Regression_Variance,
+        mtry = 100,
+        minSplitSize = 2,
+        maxDepth = -1,
+        numNodesPerIteration = 1000,
+        localTrainThreshold = 10,
+        numSubTreesPerIteration = 1000,
+        storeModelInMemory = true,
+        outputStorage = new NullSinkForestStorage,
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
+      new ConsoleNotifiee,
+      None,
+      useLogLossForValidation = false,
+      new scala.util.Random(17))
+
+    assert(forest2.trees.length === 1)
+    assert(forest2.trees(0).getNodeCount === 23)
+    assert(forest2.trees(0).subTrees.size === 7)
+    assert(compareDouble(forest2.trees(0).nodes(1).prediction, 1.4))
+    assert(compareDouble(forest2.trees(0).nodes(1).impurity, 0.9733333))
+
+    testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
+
+    // Compare the variable importance with expected values.
+    assert(compareDouble(forest.varImportance.featureImportance(0), 14.5232))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 14.6768))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 14.5232))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 14.6768))
   }
 }

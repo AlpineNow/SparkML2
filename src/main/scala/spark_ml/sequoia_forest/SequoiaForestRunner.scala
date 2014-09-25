@@ -31,6 +31,10 @@ object ForestType extends Enumeration {
   val Variance = Value(1)
 }
 
+case class ValidationOptions(
+  validationPath: String = null,
+  useLogLossForValidation: Boolean = false)
+
 /**
  * Config object to be set by command line arguments.
  */
@@ -39,7 +43,6 @@ case class RunnerConfig(
   outputPath: String = null,
   numTrees: Int = 10,
   numPartitions: Int = -1,
-  validationPath: String = null,
   delimiter: String = "\t",
   labelIndex: Int = 0,
   categoricalFeatureIndices: Set[Int] = Set[Int](),
@@ -56,14 +59,15 @@ case class RunnerConfig(
   numRowFiltersPerIter: Int = -1,
   subTreeThreshold: Int = -1,
   numSubTreesPerIter: Int = -1,
-  pauseDuration: Int = 0)
+  pauseDuration: Int = 0,
+  validationOptions: ValidationOptions = ValidationOptions())
 
 /**
  * Wraps around everything to provide a simple command line interface for running Sequoia Forest.
  */
 object SequoiaForestRunner {
   def main(args: Array[String]) {
-    val defaultConfig = RunnerConfig()
+    val defaultConfig = new RunnerConfig()
 
     // Command line argument parser.
     val parser = new OptionParser[RunnerConfig]("SequoiaForestRunner") {
@@ -86,7 +90,7 @@ object SequoiaForestRunner {
         .action((x, c) => c.copy(numPartitions = x))
       opt[String]("validationPath")
         .text("Optional path to delimited text file(s) (e.g. csv/tsv) to be used for validation. All the fields should be numeric (ignored columns can be anything). Categorical fields should be enumerated from 0 to K-1 where K is the cardinality of the field.")
-        .action((x, c) => c.copy(validationPath = x))
+        .action((x, c) => c.copy(validationOptions = c.validationOptions.copy(validationPath = x)))
       opt[String]("delimiter")
         .text("Delimiter string for the input data. The default is \"\\t\"")
         .action((x, c) => c.copy(delimiter = x))
@@ -138,6 +142,9 @@ object SequoiaForestRunner {
       opt[Int]("pauseDuration")
         .text("Time to pause after finished with training in seconds. This is useful for some Yarn clusters where the log messages are not stored after jobs are finished. The default is 0 (no pause).")
         .action((x, c) => c.copy(pauseDuration = x))
+      opt[Boolean]("useLogLossForValidation")
+        .text("Whether to use log loss for validation.")
+        .action((x, c) => c.copy(validationOptions = c.validationOptions.copy(useLogLossForValidation = x)))
       checkConfig(config =>
         if (config.numTrees <= 0) failure("The number of trees must be greater than 0.")
         else if (config.labelIndex < 0) failure("labelIndex " + config.labelIndex + " is invalid.")
@@ -186,7 +193,13 @@ object SequoiaForestRunner {
         while (col < elems.length) {
           if (col != labelIndex && !indicesToIgnore.contains(col)) {
             // Feature indices get shifted after subtracting the label index and the ignored columns.
-            features(featId) = elems(col).toDouble
+            val featureValue = if (elems(col) == "") {
+              Double.NaN
+            } else {
+              elems(col).toDouble
+            }
+
+            features(featId) = featureValue
             featId += 1
           }
 
@@ -216,8 +229,8 @@ object SequoiaForestRunner {
       // We need to re-calculate categorical feature indices after the label column and the ignored columns are removed.
       val categoricalFeatureIndices = config.categoricalFeatureIndices.map(index => colIdxToFeatIdxMap(index)).toSet
 
-      val validationData = config.validationPath match {
-        case path if path != null => Some(sc.textFile(config.validationPath).map(lineParser).collect())
+      val validationData = config.validationOptions.validationPath match {
+        case path if path != null => Some(sc.textFile(config.validationOptions.validationPath).map(lineParser).collect())
         case _ => None
       }
 
@@ -242,7 +255,8 @@ object SequoiaForestRunner {
         maxDepth = config.maxDepth,
         numNodesPerIteration = config.numRowFiltersPerIter,
         localTrainThreshold = config.subTreeThreshold,
-        numSubTreesPerIteration = config.numSubTreesPerIter)
+        numSubTreesPerIteration = config.numSubTreesPerIter,
+        useLogLossForValidation = config.validationOptions.useLogLossForValidation)
     } catch {
       case e: Exception => println("Exception:" + e.toString)
     } finally {

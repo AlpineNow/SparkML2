@@ -19,6 +19,8 @@ package spark_ml.discretization
 
 import org.apache.spark.rdd.RDD
 
+import spire.implicits._
+
 /**
  * A numeric bin with a lower bound and an upper bound.
  * The lower bound is inclusive. The upper bound is exclusive.
@@ -37,6 +39,7 @@ case class NumericBin(lower: Double, upper: Double) {
 trait Bins {
   def getCardinality: Int
   def findBinIdx(value: Double): Int
+  def getMissingValueBinIdx: Int
 }
 
 /**
@@ -56,7 +59,7 @@ case class CardinalityOverLimitException(msg: String) extends Exception(msg)
  * We expect the categorical values to go from 0 to Cardinality in an incremental fashion.
  * @param cardinality The cardinality of the feature.
  */
-case class CategoricalBins(cardinality: Int) extends Bins {
+case class CategoricalBins(cardinality: Int, missingValueBinIdx: Int = -1) extends Bins {
   def getCardinality: Int = {
     cardinality
   }
@@ -72,13 +75,15 @@ case class CategoricalBins(cardinality: Int) extends Bins {
 
     value.toInt
   }
+
+  def getMissingValueBinIdx: Int = missingValueBinIdx
 }
 
 /**
  * A discretized type.
  * @param bins Bins of the discretization.
  */
-case class NumericBins(bins: Array[NumericBin]) extends Bins {
+case class NumericBins(bins: Array[NumericBin], missingValueBinIdx: Int = -1) extends Bins {
   /**
    * The cardinality of the bins (the number of bins).
    * @return The number of bins.
@@ -111,6 +116,8 @@ case class NumericBins(bins: Array[NumericBin]) extends Bins {
 
     cur
   }
+
+  def getMissingValueBinIdx: Int = missingValueBinIdx
 }
 
 /**
@@ -125,7 +132,11 @@ trait Discretizer {
    * @param config Whatever configuration might be needed for a particular discretizer.
    * @return A pair : The first number is the maximum label value (useful to figure out classification target cardinality). The second one is an array of feature bins.
    */
-  def discretizeFeatures(input: RDD[(Double, Array[Double])], categoricalFeatureIndices: Set[Int], labelIsCategorical: Boolean, config: Map[String, String]): (Double, Array[Bins])
+  def discretizeFeatures(
+    input: RDD[(Double, Array[Double])],
+    categoricalFeatureIndices: Set[Int],
+    labelIsCategorical: Boolean,
+    config: Map[String, String]): (Double, Array[Bins])
 }
 
 /**
@@ -185,16 +196,22 @@ object Discretizer {
     val transformed = Array.fill[Byte](features.length)(0)
     val unsignedByteMax = 255
 
-    var featIdx = 0
-    while (featIdx < features.length) {
-      val binId = featureBins(featIdx).findBinIdx(features(featIdx))
-      if (binId > unsignedByteMax) {
-        throw BinIdOutOfRangeException("The bin index " + binId + " for the feature " + featIdx + " does not fall within the unsigned Byte range (0 to " + unsignedByteMax + ").")
-      }
+    cfor(0)(_ < features.length, _ + 1)(
+      featIdx => {
+        val featureVal = features(featIdx)
+        val binId = if (featureVal.isNaN) {
+          featureBins(featIdx).getMissingValueBinIdx
+        } else {
+          featureBins(featIdx).findBinIdx(featureVal)
+        }
 
-      transformed(featIdx) = convertToUnsignedByte(binId) // We simulate unsigned by mapping the minimum type value to 0.
-      featIdx += 1
-    }
+        if (binId > unsignedByteMax) {
+          throw BinIdOutOfRangeException("The bin index " + binId + " for the feature " + featIdx + " does not fall within the unsigned Byte range (0 to " + unsignedByteMax + ").")
+        }
+
+        transformed(featIdx) = convertToUnsignedByte(binId) // We simulate unsigned by mapping the minimum type value to 0.
+      }
+    )
 
     (label, transformed)
   }
@@ -211,16 +228,22 @@ object Discretizer {
     val transformed = Array.fill[Short](features.length)(0)
     val unsignedShortMax = 65535
 
-    var featIdx = 0
-    while (featIdx < features.length) {
-      val binId = featureBins(featIdx).findBinIdx(features(featIdx))
-      if (binId > unsignedShortMax) {
-        throw BinIdOutOfRangeException("The bin index " + binId + " for the feature " + featIdx + " does not fall within the unsigned Short range (0 to " + unsignedShortMax + ").")
-      }
+    cfor(0)(_ < features.length, _ + 1)(
+      featIdx => {
+        val featureVal = features(featIdx)
+        val binId = if (featureVal.isNaN) {
+          featureBins(featIdx).getMissingValueBinIdx
+        } else {
+          featureBins(featIdx).findBinIdx(featureVal)
+        }
 
-      transformed(featIdx) = convertToUnsignedShort(binId) // We simulate unsigned by mapping the minimum type value to 0.
-      featIdx += 1
-    }
+        if (binId > unsignedShortMax) {
+          throw BinIdOutOfRangeException("The bin index " + binId + " for the feature " + featIdx + " does not fall within the unsigned Short range (0 to " + unsignedShortMax + ").")
+        }
+
+        transformed(featIdx) = convertToUnsignedShort(binId) // We simulate unsigned by mapping the minimum type value to 0.
+      }
+    )
 
     (label, transformed)
   }

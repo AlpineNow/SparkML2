@@ -184,7 +184,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     }
 
     // Create an information gain statistics object.
-    val infoGainStats = InfoGainStatistics(
+    val infoGainStats = new InfoGainStatistics(
       scheduledLookup,
       numBinsPerFeature,
       treeSeeds,
@@ -239,7 +239,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(infoGainStats.binStatsArray.asInstanceOf[ClassificationStatisticsArray].binStats.length === expectedBinStatsLength)
 
     // Create an information gain statistics object with all the features per node.
-    val infoGainStats2 = InfoGainStatistics(
+    val infoGainStats2 = new InfoGainStatistics(
       scheduledLookup,
       numBinsPerFeature,
       treeSeeds,
@@ -302,17 +302,17 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
       11,
       (2.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 2)))
 
-    assert(infoGainStats2.getBinCount(0, 14, 0, 5, 2) === 0)
-    assert(infoGainStats2.getBinCount(0, 14, 0, 4, 2) === 2)
-    assert(infoGainStats2.getBinCount(0, 14, 1, 4, 2) === 0)
-    assert(infoGainStats2.getBinCount(0, 14, 1, 1, 2) === 2)
-    assert(infoGainStats2.getBinCount(0, 14, 2, 4, 2) === 0)
-    assert(infoGainStats2.getBinCount(0, 14, 2, 15, 2) === 2)
-    assert(infoGainStats2.getBinCount(0, 16, 1, 4, 2) === 0)
-    assert(infoGainStats2.getBinCount(0, 16, 1, 7, 4) === 8)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 0, 5, 2) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 0, 4, 2) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 1, 4, 2) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 1, 1, 2) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 2, 4, 2) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 2, 15, 2) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 16, 1, 4, 2) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 16, 1, 7, 4) === 8)
 
-    assert(infoGainStats2.getBinCount(1, 8, 3, 7, 4) === 0)
-    assert(infoGainStats2.getBinCount(1, 8, 3, 7, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(1, 8, 3, 7, 4) === 0)
+    assert(infoGainStats2.getBinLabelWeight(1, 8, 3, 7, 1) === 2)
 
     val nextNodeIdsPerTree = Array[Int](21, 23)
 
@@ -332,10 +332,12 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 3,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(numClasses)))
+        numClasses = Some(numClasses),
+        imputationType = ImputationType.SplitOnMissing),
+      new scala.util.Random(17))
 
     assert(nodeDepths(0).size === 0)
-    assert(nodeDepths(1).size === 5)
+    assert(nodeDepths(1).size === 4) // There should be 4 child nodes (due to all binary splits).
 
     val split1 = splits.next()
     assert(split1.prediction === 1.0)
@@ -382,22 +384,20 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split6.nodeId === 10)
     assert(compareDouble(split6.impurity, 0.9183))
     assert(split6.treeId === 1)
-    assert(split6.splitImpurity.get === 0.0)
+    assert(compareDouble(split6.splitImpurity.get, 0.6666))
     assert(split6.nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId])
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].parentNodeId === 10)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].featureId === 1)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 3)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 23)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 24)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 25)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 3)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 5)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 5)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(25) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 10)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeSubTreeHash.size === 0)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(23) === -1)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(24) === -1)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(25) === -1)
 
     val split7 = splits.next()
     assert(split7.prediction === 3.0)
@@ -409,8 +409,8 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].parentNodeId === 11)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].featureId === 0)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].splitBinId === 3)
-    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === 26)
-    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 27)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === 25)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 26)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftWeight === 5)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightWeight === 2)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftSubTreeHash === -1)
@@ -464,7 +464,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     }
 
     // Create an information gain statistics object.
-    val infoGainStats = InfoGainStatistics(
+    val infoGainStats = new InfoGainStatistics(
       scheduledLookup,
       numBinsPerFeature,
       treeSeeds,
@@ -527,17 +527,17 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
       11,
       (2.0, Array[Short](Discretizer.convertToUnsignedShort(5), Discretizer.convertToUnsignedShort(5), Discretizer.convertToUnsignedShort(7), Discretizer.convertToUnsignedShort(1), Discretizer.convertToUnsignedShort(3), Discretizer.convertToUnsignedShort(2)), Array[Byte](3, 2)))
 
-    assert(infoGainStats.getBinCount(0, 14, 0, 5, 2) === 0)
-    assert(infoGainStats.getBinCount(0, 14, 0, 4, 2) === 2)
-    assert(infoGainStats.getBinCount(0, 14, 1, 4, 2) === 0)
-    assert(infoGainStats.getBinCount(0, 14, 1, 1, 2) === 2)
-    assert(infoGainStats.getBinCount(0, 14, 2, 4, 2) === 0)
-    assert(infoGainStats.getBinCount(0, 14, 2, 15, 2) === 2)
-    assert(infoGainStats.getBinCount(0, 16, 1, 4, 2) === 0)
-    assert(infoGainStats.getBinCount(0, 16, 1, 7, 4) === 8)
+    assert(infoGainStats.getBinLabelWeight(0, 14, 0, 5, 2) === 0)
+    assert(infoGainStats.getBinLabelWeight(0, 14, 0, 4, 2) === 2)
+    assert(infoGainStats.getBinLabelWeight(0, 14, 1, 4, 2) === 0)
+    assert(infoGainStats.getBinLabelWeight(0, 14, 1, 1, 2) === 2)
+    assert(infoGainStats.getBinLabelWeight(0, 14, 2, 4, 2) === 0)
+    assert(infoGainStats.getBinLabelWeight(0, 14, 2, 15, 2) === 2)
+    assert(infoGainStats.getBinLabelWeight(0, 16, 1, 4, 2) === 0)
+    assert(infoGainStats.getBinLabelWeight(0, 16, 1, 7, 4) === 8)
 
-    assert(infoGainStats.getBinCount(1, 8, 3, 7, 4) === 0)
-    assert(infoGainStats.getBinCount(1, 8, 3, 7, 1) === 2)
+    assert(infoGainStats.getBinLabelWeight(1, 8, 3, 7, 4) === 0)
+    assert(infoGainStats.getBinLabelWeight(1, 8, 3, 7, 1) === 2)
 
     val nextNodeIdsPerTree = Array[Int](21, 23)
 
@@ -557,10 +557,12 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 3,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = Some(numClasses)))
+        numClasses = Some(numClasses),
+        imputationType = ImputationType.SplitOnMissing),
+      new scala.util.Random(17))
 
     assert(nodeDepths(0).size === 0)
-    assert(nodeDepths(1).size === 5)
+    assert(nodeDepths(1).size === 4)
 
     val split1 = splits.next()
     assert(split1.prediction === 1.0)
@@ -607,6 +609,231 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split6.nodeId === 10)
     assert(compareDouble(split6.impurity, 0.9183))
     assert(split6.treeId === 1)
+    assert(compareDouble(split6.splitImpurity.get, 0.6666))
+    assert(split6.nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId])
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].parentNodeId === 10)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].featureId === 1)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 3)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 10)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeSubTreeHash.size === 0)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(23) === -1)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(24) === -1)
+
+    val split7 = splits.next()
+    assert(split7.prediction === 3.0)
+    assert(split7.nodeId === 11)
+    assert(compareDouble(split7.impurity, 0.8631))
+    assert(split7.treeId === 1)
+    assert(split7.splitImpurity.get === 0.0)
+    assert(split7.nodeSplit.get.isInstanceOf[NumericSplitOnBinId])
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].parentNodeId === 11)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].featureId === 0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].splitBinId === 3)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === 25)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 26)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftWeight === 5)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightWeight === 2)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftSubTreeHash === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightSubTreeHash === -1)
+  }
+
+  test("Test InfoGainStatistics for Binary Classification") {
+    val numTrees = 2
+    val nodeSplitsPerTree = Array.fill[mutable.Queue[NodeSplitOnBinId]](numTrees)(mutable.Queue[NodeSplitOnBinId]())
+
+    nodeSplitsPerTree(0).enqueue(NumericSplitOnBinId(2, 3, 5, 13, 14, 2.0, 2.0, -1, -1), NumericSplitOnBinId(5, 1, 2, 15, 16, 3.0, 6.0, 0, -1))
+    nodeSplitsPerTree(1).enqueue(NumericSplitOnBinId(3, 4, 2, 7, 8, 2.0, 5.0, -1, -1), CategoricalSplitOnBinId(4, 3, mutable.Map[Int, Int](1 -> 10, 4 -> 11), mutable.Map[Int, Double](10 -> 3.0, 11 -> 2.0), mutable.Map[Int, Int]()))
+
+    val nodeDepths = Array.fill[mutable.Map[Int, Int]](2)(mutable.Map[Int, Int]())
+    nodeDepths(0).put(13, 5)
+    nodeDepths(0).put(14, 5)
+    nodeDepths(0).put(16, 7)
+    nodeDepths(1).put(7, 3)
+    nodeDepths(1).put(8, 3)
+    nodeDepths(1).put(10, 6)
+    nodeDepths(1).put(11, 6)
+
+    val scheduledLookup = ScheduledNodeSplitLookup.createLookupForNodeSplits(nodeSplitsPerTree, 100)
+    val treeSeeds = new Array[Int](numTrees)
+    var treeId = 0
+    val randGen = scala.util.Random
+    while (treeId < numTrees) {
+      treeSeeds(treeId) = randGen.nextInt()
+      treeId += 1
+    }
+
+    val numClasses = 2
+    val numBinsPerFeature = Array[Int](10, 11, 17, 13, 15, 9)
+
+    val featureBins = new Array[Bins](6)
+    var featId = 0
+    while (featId < numBinsPerFeature.length) {
+      if (featId != 1) {
+        val bins = mutable.ArrayBuffer[NumericBin]()
+        bins += NumericBin(Double.NegativeInfinity, 0)
+        while (bins.length < numBinsPerFeature(featId)) {
+          bins += NumericBin(bins.length - 1, bins.length)
+        }
+
+        featureBins(featId) = NumericBins(bins.toArray)
+      } else {
+        featureBins(featId) = CategoricalBins(numBinsPerFeature(featId))
+      }
+
+      featId += 1
+    }
+
+    // Create an information gain statistics object with all the features per node.
+    val infoGainStats2 = new InfoGainStatistics(
+      scheduledLookup,
+      numBinsPerFeature,
+      treeSeeds,
+      numBinsPerFeature.length,
+      numClasses)
+
+    // Add some samples and make sure that we get the right statistics accumulated.
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      13,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      14,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      16,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(6), Discretizer.convertToUnsignedByte(7)), Array[Byte](5, 1)))
+
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      16,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(4)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      8,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(8)), Array[Byte](4, 2)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      7,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      10,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      10,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      10,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      11,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      11,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 2)))
+
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 0, 5, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 0, 4, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 1, 4, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 1, 1, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 2, 4, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 2, 15, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 16, 1, 4, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 16, 1, 7, 0) === 8)
+
+    assert(infoGainStats2.getBinLabelWeight(1, 8, 3, 7, 4) === 0)
+    assert(infoGainStats2.getBinLabelWeight(1, 8, 3, 7, 1) === 2)
+
+    val nextNodeIdsPerTree = Array[Int](21, 23)
+
+    // Now, get the splits.
+    val splits = infoGainStats2.computeNodePredictionsAndSplits(
+      featureBins,
+      nextNodeIdsPerTree,
+      nodeDepths,
+      SequoiaForestOptions(
+        numTrees = 2,
+        treeType = TreeType.Classification_InfoGain,
+        mtry = 6,
+        minSplitSize = 2,
+        maxDepth = -1,
+        numNodesPerIteration = 100,
+        localTrainThreshold = 100000,
+        numSubTreesPerIteration = 3,
+        storeModelInMemory = true,
+        outputStorage = new NullSinkForestStorage,
+        numClasses = Some(numClasses),
+        imputationType = ImputationType.SplitOnMissing),
+      new scala.util.Random(17))
+
+    assert(nodeDepths(0).size === 0)
+    assert(nodeDepths(1).size === 4) // There should be 4 child nodes (due to all binary splits).
+
+    val split1 = splits.next()
+    assert(split1.prediction === 1.0)
+    assert(split1.nodeId === 13)
+    assert(split1.impurity === 0.0)
+    assert(split1.treeId === 0)
+    assert(split1.splitImpurity === None)
+    assert(split1.nodeSplit === None)
+
+    val split2 = splits.next()
+    assert(split2.prediction === 1.0)
+    assert(split2.nodeId === 14)
+    assert(split2.impurity === 0.0)
+    assert(split2.treeId === 0)
+    assert(split2.splitImpurity === None)
+    assert(split2.nodeSplit === None)
+
+    val split3 = splits.next()
+    assert(split3.prediction === 0.0)
+    assert(split3.nodeId === 16)
+    assert(split3.impurity === 0.0)
+    assert(split3.treeId === 0)
+    assert(split3.splitImpurity === None)
+    assert(split3.nodeSplit === None)
+
+    val split4 = splits.next()
+    assert(split4.prediction === 0.0)
+    assert(split4.nodeId === 7)
+    assert(split4.impurity === 0.0)
+    assert(split4.treeId === 1)
+    assert(split4.splitImpurity === None)
+    assert(split4.nodeSplit === None)
+
+    val split5 = splits.next()
+    assert(split5.prediction === 1.0)
+    assert(split5.nodeId === 8)
+    assert(split5.impurity === 0.0)
+    assert(split5.treeId === 1)
+    assert(split5.splitImpurity === None)
+    assert(split5.nodeSplit === None)
+
+    val split6 = splits.next()
+    assert(split6.prediction === 0.0)
+    assert(split6.nodeId === 10)
+    assert(compareDouble(split6.impurity, 0.9183))
+    assert(split6.treeId === 1)
     assert(split6.splitImpurity.get === 0.0)
     assert(split6.nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId])
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].parentNodeId === 10)
@@ -614,7 +841,247 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 3)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 23)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 24)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 25)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 10)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeSubTreeHash.size === 0)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(23) === -1)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(24) === -1)
+
+    val split7 = splits.next()
+    assert(split7.prediction === 0.0)
+    assert(split7.nodeId === 11)
+    assert(compareDouble(split7.impurity, 0.8631))
+    assert(split7.treeId === 1)
+    assert(split7.splitImpurity.get === 0.0)
+    assert(split7.nodeSplit.get.isInstanceOf[NumericSplitOnBinId])
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].parentNodeId === 11)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].featureId === 0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].splitBinId === 3)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === 25)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 26)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftWeight === 5)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightWeight === 2)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftSubTreeHash === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightSubTreeHash === -1)
+  }
+
+  test("Test InfoGainStatistics with Missing Values") {
+    val numTrees = 2
+    val nodeSplitsPerTree = Array.fill[mutable.Queue[NodeSplitOnBinId]](numTrees)(mutable.Queue[NodeSplitOnBinId]())
+
+    nodeSplitsPerTree(0).enqueue(NumericSplitOnBinId(2, 3, 5, 13, 14, 2.0, 2.0, -1, -1), NumericSplitOnBinId(5, 1, 2, 15, 16, 3.0, 6.0, 0, -1))
+    nodeSplitsPerTree(1).enqueue(NumericSplitOnBinId(3, 4, 2, 7, 8, 2.0, 5.0, -1, -1), CategoricalSplitOnBinId(4, 3, mutable.Map[Int, Int](1 -> 10, 4 -> 11), mutable.Map[Int, Double](10 -> 3.0, 11 -> 2.0), mutable.Map[Int, Int]()))
+
+    val nodeDepths = Array.fill[mutable.Map[Int, Int]](2)(mutable.Map[Int, Int]())
+    nodeDepths(0).put(13, 5)
+    nodeDepths(0).put(14, 5)
+    nodeDepths(0).put(16, 7)
+    nodeDepths(1).put(7, 3)
+    nodeDepths(1).put(8, 3)
+    nodeDepths(1).put(10, 6)
+    nodeDepths(1).put(11, 6)
+
+    val scheduledLookup = ScheduledNodeSplitLookup.createLookupForNodeSplits(nodeSplitsPerTree, 100)
+    val treeSeeds = new Array[Int](numTrees)
+    var treeId = 0
+    val randGen = scala.util.Random
+    while (treeId < numTrees) {
+      treeSeeds(treeId) = randGen.nextInt()
+      treeId += 1
+    }
+
+    val numClasses = 2
+    val numBinsPerFeature = Array[Int](11, 12, 17, 13, 15, 9) // Features 0, 1 have NaN values.
+
+    val featureBins = new Array[Bins](6)
+    var featId = 0
+    while (featId < numBinsPerFeature.length) {
+      if (featId != 1) {
+        val bins = mutable.ArrayBuffer[NumericBin]()
+        bins += NumericBin(Double.NegativeInfinity, 0)
+        val numBinsWithoutNaN = if (featId == 0) {
+          numBinsPerFeature(featId) - 1
+        } else {
+          numBinsPerFeature(featId)
+        }
+
+        while (bins.length < numBinsWithoutNaN) {
+          bins += NumericBin(bins.length - 1, bins.length)
+        }
+
+        if (featId == 0) {
+          featureBins(featId) = NumericBins(bins.toArray, numBinsPerFeature(featId) - 1)
+        } else {
+          featureBins(featId) = NumericBins(bins.toArray)
+        }
+      } else {
+        featureBins(featId) = CategoricalBins(numBinsPerFeature(featId) - 1, 11) // The last one is missing value bin.
+      }
+
+      featId += 1
+    }
+
+    // Create an information gain statistics object with all the features per node.
+    val infoGainStats2 = new InfoGainStatistics(
+      scheduledLookup,
+      numBinsPerFeature,
+      treeSeeds,
+      numBinsPerFeature.length,
+      numClasses)
+
+    // Add some samples and make sure that we get the right statistics accumulated.
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      13,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      14,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      16,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(6), Discretizer.convertToUnsignedByte(7)), Array[Byte](5, 1)))
+
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      16,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(4)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      8,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(8)), Array[Byte](4, 2)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      7,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      10,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      10,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      10,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      11,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      11,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      11,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 2)))
+
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 0, 5, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 0, 4, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 1, 4, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 1, 1, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 2, 4, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 2, 15, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 16, 1, 4, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 16, 1, 7, 0) === 8)
+
+    assert(infoGainStats2.getBinLabelWeight(1, 8, 3, 7, 4) === 0)
+    assert(infoGainStats2.getBinLabelWeight(1, 8, 3, 7, 1) === 2)
+
+    val nextNodeIdsPerTree = Array[Int](21, 23)
+
+    // Now, get the splits.
+    val splits = infoGainStats2.computeNodePredictionsAndSplits(
+      featureBins,
+      nextNodeIdsPerTree,
+      nodeDepths,
+      SequoiaForestOptions(
+        numTrees = 2,
+        treeType = TreeType.Classification_InfoGain,
+        mtry = 6,
+        minSplitSize = 2,
+        maxDepth = -1,
+        numNodesPerIteration = 100,
+        localTrainThreshold = 100000,
+        numSubTreesPerIteration = 3,
+        storeModelInMemory = true,
+        outputStorage = new NullSinkForestStorage,
+        numClasses = Some(numClasses),
+        imputationType = ImputationType.SplitOnMissing),
+      new scala.util.Random(17))
+
+    assert(nodeDepths(0).size === 0)
+    assert(nodeDepths(1).size === 6) // There should be 6 child nodes (due to all binary splits and NaN bins).
+
+    val split1 = splits.next()
+    assert(split1.prediction === 1.0)
+    assert(split1.nodeId === 13)
+    assert(split1.impurity === 0.0)
+    assert(split1.treeId === 0)
+    assert(split1.splitImpurity === None)
+    assert(split1.nodeSplit === None)
+
+    val split2 = splits.next()
+    assert(split2.prediction === 1.0)
+    assert(split2.nodeId === 14)
+    assert(split2.impurity === 0.0)
+    assert(split2.treeId === 0)
+    assert(split2.splitImpurity === None)
+    assert(split2.nodeSplit === None)
+
+    val split3 = splits.next()
+    assert(split3.prediction === 0.0)
+    assert(split3.nodeId === 16)
+    assert(split3.impurity === 0.0)
+    assert(split3.treeId === 0)
+    assert(split3.splitImpurity === None)
+    assert(split3.nodeSplit === None)
+
+    val split4 = splits.next()
+    assert(split4.prediction === 0.0)
+    assert(split4.nodeId === 7)
+    assert(split4.impurity === 0.0)
+    assert(split4.treeId === 1)
+    assert(split4.splitImpurity === None)
+    assert(split4.nodeSplit === None)
+
+    val split5 = splits.next()
+    assert(split5.prediction === 1.0)
+    assert(split5.nodeId === 8)
+    assert(split5.impurity === 0.0)
+    assert(split5.treeId === 1)
+    assert(split5.splitImpurity === None)
+    assert(split5.nodeSplit === None)
+
+    val split6 = splits.next()
+    assert(split6.prediction === 0.0)
+    assert(split6.nodeId === 10)
+    assert(compareDouble(split6.impurity, 0.9183))
+    assert(split6.treeId === 1)
+    assert(split6.splitImpurity.get === 0.0)
+    assert(split6.nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId])
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].parentNodeId === 10)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].featureId === 1)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 3)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(11) === 25)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 23)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 3)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 5)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 5)
@@ -625,9 +1092,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(25) === -1)
 
     val split7 = splits.next()
-    assert(split7.prediction === 3.0)
+    assert(split7.prediction === 0.0)
     assert(split7.nodeId === 11)
-    assert(compareDouble(split7.impurity, 0.8631))
+    assert(compareDouble(split7.impurity, 0.6500224))
     assert(split7.treeId === 1)
     assert(split7.splitImpurity.get === 0.0)
     assert(split7.nodeSplit.get.isInstanceOf[NumericSplitOnBinId])
@@ -640,6 +1107,243 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightWeight === 2)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftSubTreeHash === -1)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightSubTreeHash === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanBinId === 10)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanNodeId === 28)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanWeight === 5)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanSubTreeHash === -1)
+  }
+
+  test("Test InfoGainStatistics with Missing Values Degenerate Cases") {
+    val numTrees = 2
+    val nodeSplitsPerTree = Array.fill[mutable.Queue[NodeSplitOnBinId]](numTrees)(mutable.Queue[NodeSplitOnBinId]())
+
+    nodeSplitsPerTree(0).enqueue(NumericSplitOnBinId(2, 3, 5, 13, 14, 2.0, 2.0, -1, -1), NumericSplitOnBinId(5, 1, 2, 15, 16, 3.0, 6.0, 0, -1))
+    nodeSplitsPerTree(1).enqueue(NumericSplitOnBinId(3, 4, 2, 7, 8, 2.0, 5.0, -1, -1), CategoricalSplitOnBinId(4, 3, mutable.Map[Int, Int](1 -> 10, 4 -> 11), mutable.Map[Int, Double](10 -> 3.0, 11 -> 2.0), mutable.Map[Int, Int]()))
+
+    val nodeDepths = Array.fill[mutable.Map[Int, Int]](2)(mutable.Map[Int, Int]())
+    nodeDepths(0).put(13, 5)
+    nodeDepths(0).put(14, 5)
+    nodeDepths(0).put(16, 7)
+    nodeDepths(1).put(7, 3)
+    nodeDepths(1).put(8, 3)
+    nodeDepths(1).put(10, 6)
+    nodeDepths(1).put(11, 6)
+
+    val scheduledLookup = ScheduledNodeSplitLookup.createLookupForNodeSplits(nodeSplitsPerTree, 100)
+    val treeSeeds = new Array[Int](numTrees)
+    var treeId = 0
+    val randGen = scala.util.Random
+    while (treeId < numTrees) {
+      treeSeeds(treeId) = randGen.nextInt()
+      treeId += 1
+    }
+
+    val numClasses = 2
+    val numBinsPerFeature = Array[Int](11, 12, 17, 13, 15, 9) // Features 0, 1 have NaN values.
+
+    val featureBins = new Array[Bins](6)
+    var featId = 0
+    while (featId < numBinsPerFeature.length) {
+      if (featId != 1) {
+        val bins = mutable.ArrayBuffer[NumericBin]()
+        bins += NumericBin(Double.NegativeInfinity, 0)
+        val numBinsWithoutNaN = if (featId == 0) {
+          numBinsPerFeature(featId) - 1
+        } else {
+          numBinsPerFeature(featId)
+        }
+
+        while (bins.length < numBinsWithoutNaN) {
+          bins += NumericBin(bins.length - 1, bins.length)
+        }
+
+        if (featId == 0) {
+          featureBins(featId) = NumericBins(bins.toArray, numBinsPerFeature(featId) - 1)
+        } else {
+          featureBins(featId) = NumericBins(bins.toArray)
+        }
+      } else {
+        featureBins(featId) = CategoricalBins(numBinsPerFeature(featId) - 1, 11) // The last one is missing value bin.
+      }
+
+      featId += 1
+    }
+
+    // Create an information gain statistics object with all the features per node.
+    val infoGainStats2 = new InfoGainStatistics(
+      scheduledLookup,
+      numBinsPerFeature,
+      treeSeeds,
+      numBinsPerFeature.length,
+      numClasses)
+
+    // Add some samples and make sure that we get the right statistics accumulated.
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      13,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      14,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      16,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(6), Discretizer.convertToUnsignedByte(7)), Array[Byte](5, 1)))
+
+    infoGainStats2.addUnsignedByteSample(
+      0,
+      16,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(4)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      8,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(8)), Array[Byte](4, 2)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      7,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      10,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      10,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      11,
+      (0.0, Array[Byte](Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    infoGainStats2.addUnsignedByteSample(
+      1,
+      11,
+      (1.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 2)))
+
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 0, 5, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 0, 4, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 1, 4, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 1, 1, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 2, 4, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 14, 2, 15, 1) === 2)
+    assert(infoGainStats2.getBinLabelWeight(0, 16, 1, 4, 1) === 0)
+    assert(infoGainStats2.getBinLabelWeight(0, 16, 1, 7, 0) === 8)
+
+    assert(infoGainStats2.getBinLabelWeight(1, 8, 3, 7, 4) === 0)
+    assert(infoGainStats2.getBinLabelWeight(1, 8, 3, 7, 1) === 2)
+
+    val nextNodeIdsPerTree = Array[Int](21, 23)
+
+    // Now, get the splits.
+    val splits = infoGainStats2.computeNodePredictionsAndSplits(
+      featureBins,
+      nextNodeIdsPerTree,
+      nodeDepths,
+      SequoiaForestOptions(
+        numTrees = 2,
+        treeType = TreeType.Classification_InfoGain,
+        mtry = 6,
+        minSplitSize = 2,
+        maxDepth = -1,
+        numNodesPerIteration = 100,
+        localTrainThreshold = 100000,
+        numSubTreesPerIteration = 3,
+        storeModelInMemory = true,
+        outputStorage = new NullSinkForestStorage,
+        numClasses = Some(numClasses),
+        imputationType = ImputationType.SplitOnMissing),
+      new scala.util.Random(17))
+
+    assert(nodeDepths(0).size === 0)
+    assert(nodeDepths(1).size === 4) // There should be 6 child nodes (due to all binary splits and NaN bins).
+
+    val split1 = splits.next()
+    assert(split1.prediction === 1.0)
+    assert(split1.nodeId === 13)
+    assert(split1.impurity === 0.0)
+    assert(split1.treeId === 0)
+    assert(split1.splitImpurity === None)
+    assert(split1.nodeSplit === None)
+
+    val split2 = splits.next()
+    assert(split2.prediction === 1.0)
+    assert(split2.nodeId === 14)
+    assert(split2.impurity === 0.0)
+    assert(split2.treeId === 0)
+    assert(split2.splitImpurity === None)
+    assert(split2.nodeSplit === None)
+
+    val split3 = splits.next()
+    assert(split3.prediction === 0.0)
+    assert(split3.nodeId === 16)
+    assert(split3.impurity === 0.0)
+    assert(split3.treeId === 0)
+    assert(split3.splitImpurity === None)
+    assert(split3.nodeSplit === None)
+
+    val split4 = splits.next()
+    assert(split4.prediction === 0.0)
+    assert(split4.nodeId === 7)
+    assert(split4.impurity === 0.0)
+    assert(split4.treeId === 1)
+    assert(split4.splitImpurity === None)
+    assert(split4.nodeSplit === None)
+
+    val split5 = splits.next()
+    assert(split5.prediction === 1.0)
+    assert(split5.nodeId === 8)
+    assert(split5.impurity === 0.0)
+    assert(split5.treeId === 1)
+    assert(split5.splitImpurity === None)
+    assert(split5.nodeSplit === None)
+
+    val split6 = splits.next()
+    assert(split6.prediction === 0.0)
+    assert(split6.nodeId === 10)
+    assert(compareDouble(split6.impurity, 1.0))
+    assert(split6.treeId === 1)
+    assert(split6.splitImpurity.get === 0.0)
+    assert(split6.nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId])
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].parentNodeId === 10)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].featureId === 1)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 2)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(11) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeSubTreeHash.size === 0)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(23) === -1)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(24) === -1)
+
+    val split7 = splits.next()
+    assert(split7.prediction === 0.0)
+    assert(split7.nodeId === 11)
+    assert(compareDouble(split7.impurity, 0.8631206))
+    assert(split7.treeId === 1)
+    assert(split7.splitImpurity.get === 0.0)
+    assert(split7.nodeSplit.get.isInstanceOf[NumericSplitOnBinId])
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].parentNodeId === 11)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].featureId === 0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].splitBinId === 0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 25)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftWeight === 0.0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightWeight === 2.0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftSubTreeHash === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightSubTreeHash === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanBinId === 10)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanNodeId === 26)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanWeight === 5.0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanSubTreeHash === -1)
   }
 
   test("Test VarianceStatistics") {
@@ -689,7 +1393,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     }
 
     // Create a variance statistics object.
-    val varStats = VarianceStatistics(
+    val varStats = new VarianceStatistics(
       scheduledLookup,
       numBinsPerFeature,
       treeSeeds,
@@ -743,7 +1447,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(varStats.binStatsArray.asInstanceOf[RegressionStatisticsArray].binStats.length === expectedBinStatsLength)
 
     // Create a variance statistics object with all the features per node.
-    val varStats2 = VarianceStatistics(
+    val varStats2 = new VarianceStatistics(
       scheduledLookup,
       numBinsPerFeature,
       treeSeeds,
@@ -837,10 +1541,12 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 3,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None))
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
+      new scala.util.Random(17))
 
     assert(nodeDepths(0).size === 0)
-    assert(nodeDepths(1).size === 5)
+    assert(nodeDepths(1).size === 4)
 
     val split1 = splits.next()
     assert(split1.treeId === 0)
@@ -898,17 +1604,15 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split6.nodeSplit.get.parentNodeId === 10)
     assert(split6.nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId])
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 3)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 23)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 24)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 25)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 3)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 10)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 5)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(25) === 5)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeSubTreeHash.size === 0)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(23) === -1)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(24) === -1)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(25) === -1)
 
     val split7 = splits.next()
     assert(compareDouble(split7.prediction, 2.714286))
@@ -920,8 +1624,8 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].parentNodeId === 11)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].featureId === 0)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].splitBinId === 3)
-    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === 26)
-    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 27)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === 25)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 26)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftWeight === 5)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightWeight === 2)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftSubTreeHash === -1)
@@ -974,7 +1678,7 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     }
 
     // Create an information gain statistics object.
-    val varStats = VarianceStatistics(
+    val varStats = new VarianceStatistics(
       scheduledLookup,
       numBinsPerFeature,
       treeSeeds,
@@ -1068,10 +1772,12 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         numSubTreesPerIteration = 3,
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
-        numClasses = None))
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
+      new scala.util.Random(17))
 
     assert(nodeDepths(0).size === 0)
-    assert(nodeDepths(1).size === 5)
+    assert(nodeDepths(1).size === 4)
 
     val split1 = splits.next()
     assert(split1.treeId === 0)
@@ -1129,17 +1835,15 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split6.nodeSplit.get.parentNodeId === 10)
     assert(split6.nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId])
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 3)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 23)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 24)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 25)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 3)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 10)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 5)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(25) === 5)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeSubTreeHash.size === 0)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(23) === -1)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(24) === -1)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(25) === -1)
 
     val split7 = splits.next()
     assert(compareDouble(split7.prediction, 2.714286))
@@ -1151,11 +1855,502 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].parentNodeId === 11)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].featureId === 0)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].splitBinId === 3)
-    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === 26)
-    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 27)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === 25)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 26)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftWeight === 5)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightWeight === 2)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftSubTreeHash === -1)
     assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightSubTreeHash === -1)
+  }
+
+  test("Test VarianceStatistics with Missing Values") {
+    val numTrees = 2
+    val nodeSplitsPerTree = Array.fill[mutable.Queue[NodeSplitOnBinId]](numTrees)(mutable.Queue[NodeSplitOnBinId]())
+
+    nodeSplitsPerTree(0).enqueue(NumericSplitOnBinId(2, 3, 5, 13, 14, 2.0, 2.0, -1, -1), NumericSplitOnBinId(5, 1, 2, 15, 16, 3.0, 6.0, 0, -1))
+    nodeSplitsPerTree(1).enqueue(NumericSplitOnBinId(3, 4, 2, 7, 8, 2.0, 5.0, -1, -1), CategoricalSplitOnBinId(4, 3, mutable.Map[Int, Int](1 -> 10, 4 -> 11), mutable.Map[Int, Double](10 -> 3.0, 11 -> 2.0), mutable.Map[Int, Int]()))
+
+    val nodeDepths = Array.fill[mutable.Map[Int, Int]](2)(mutable.Map[Int, Int]())
+    nodeDepths(0).put(13, 5)
+    nodeDepths(0).put(14, 5)
+    nodeDepths(0).put(16, 7)
+    nodeDepths(1).put(7, 3)
+    nodeDepths(1).put(8, 3)
+    nodeDepths(1).put(10, 6)
+    nodeDepths(1).put(11, 6)
+
+    val scheduledLookup = ScheduledNodeSplitLookup.createLookupForNodeSplits(nodeSplitsPerTree, 100)
+    val treeSeeds = new Array[Int](numTrees)
+    var treeId = 0
+    val randGen = scala.util.Random
+    while (treeId < numTrees) {
+      treeSeeds(treeId) = randGen.nextInt()
+      treeId += 1
+    }
+
+    val mtry = 4
+    val numBinsPerFeature = Array[Int](11, 12, 17, 13, 15, 9)
+
+    val featureBins = new Array[Bins](6)
+    var featId = 0
+    while (featId < numBinsPerFeature.length) {
+      if (featId != 1) {
+        val bins = mutable.ArrayBuffer[NumericBin]()
+        bins += NumericBin(Double.NegativeInfinity, 0)
+        val numBinsWithoutNaN = if (featId == 0) {
+          numBinsPerFeature(featId) - 1
+        } else {
+          numBinsPerFeature(featId)
+        }
+
+        while (bins.length < numBinsWithoutNaN) {
+          bins += NumericBin(bins.length - 1, bins.length)
+        }
+
+        if (featId == 0) {
+          featureBins(featId) = NumericBins(bins.toArray, numBinsPerFeature(featId) - 1)
+        } else {
+          featureBins(featId) = NumericBins(bins.toArray)
+        }
+      } else {
+        featureBins(featId) = CategoricalBins(numBinsPerFeature(featId) - 1, 11) // The last one is missing value bin.
+      }
+
+      featId += 1
+    }
+
+    // Create a variance statistics object with all the features per node.
+    val varStats2 = new VarianceStatistics(
+      scheduledLookup,
+      numBinsPerFeature,
+      treeSeeds,
+      numBinsPerFeature.length)
+
+    // Add some samples and make sure that we get the right statistics accumulated.
+    varStats2.addUnsignedByteSample(
+      treeId = 0,
+      nodeId = 13,
+      sample = (1.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 0,
+      nodeId = 14,
+      sample = (2.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 0,
+      nodeId = 16,
+      sample = (4.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(6), Discretizer.convertToUnsignedByte(7)), Array[Byte](5, 1)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 0,
+      nodeId = 16,
+      sample = (4.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(4)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 8,
+      sample = (1.0, Array[Byte](Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(8)), Array[Byte](4, 2)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 7,
+      sample = (3.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 10,
+      sample = (3.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 10,
+      sample = (4.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 10,
+      sample = (3.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 11,
+      sample = (3.0, Array[Byte](Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 11,
+      sample = (3.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 11,
+      sample = (2.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 2)))
+
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 0)._1 === 0.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 0)._2 === 0.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 0)._3 === 0.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 4)._1 === 1.0 * 2.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 4)._2 === 1.0 * 2.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 4)._3 === 2.0)
+
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 0)._1 === 0.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 0)._2 === 0.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 0)._3 === 0.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 1)._1 === 3.0 * 5.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 1)._2 === 9.0 * 5.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 1)._3 === 5.0)
+
+    val nextNodeIdsPerTree = Array[Int](21, 23)
+
+    // Now, get the splits.
+    val splits = varStats2.computeNodePredictionsAndSplits(
+      featureBins,
+      nextNodeIdsPerTree,
+      nodeDepths,
+      SequoiaForestOptions(
+        numTrees = 2,
+        treeType = TreeType.Regression_Variance,
+        mtry = 6,
+        minSplitSize = 2,
+        maxDepth = -1,
+        numNodesPerIteration = 100,
+        localTrainThreshold = 100000,
+        numSubTreesPerIteration = 3,
+        storeModelInMemory = true,
+        outputStorage = new NullSinkForestStorage,
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
+      new scala.util.Random(17))
+
+    assert(nodeDepths(0).size === 0)
+    assert(nodeDepths(1).size === 5) // There should be 6 child nodes (due to all binary splits and NaN bins).
+
+    val split1 = splits.next()
+    assert(split1.treeId === 0)
+    assert(split1.nodeId === 13)
+    assert(split1.prediction === 1.0)
+    assert(split1.weight === 2.0)
+    assert(split1.impurity === 0.0)
+    assert(split1.splitImpurity === None)
+    assert(split1.nodeSplit === None)
+
+    val split2 = splits.next()
+    assert(split2.treeId === 0)
+    assert(split2.nodeId === 14)
+    assert(split2.prediction === 2.0)
+    assert(split2.weight === 2.0)
+    assert(split2.impurity === 0.0)
+    assert(split2.splitImpurity === None)
+    assert(split2.nodeSplit === None)
+
+    val split3 = splits.next()
+    assert(split3.treeId === 0)
+    assert(split3.nodeId === 16)
+    assert(split3.prediction === 4.0)
+    assert(split3.weight === 8.0)
+    assert(split3.impurity === 0.0)
+    assert(split3.splitImpurity === None)
+    assert(split3.nodeSplit === None)
+
+    val split4 = splits.next()
+    assert(split4.treeId === 1)
+    assert(split4.nodeId === 7)
+    assert(split4.prediction === 3.0)
+    assert(split4.weight === 5.0)
+    assert(split4.impurity === 0.0)
+    assert(split4.splitImpurity === None)
+    assert(split4.nodeSplit === None)
+
+    val split5 = splits.next()
+    assert(split5.treeId === 1)
+    assert(split5.nodeId === 8)
+    assert(split5.prediction === 1.0)
+    assert(split5.weight === 2.0)
+    assert(split5.impurity === 0.0)
+    assert(split5.splitImpurity === None)
+    assert(split5.nodeSplit === None)
+
+    val split6 = splits.next()
+    assert(split6.treeId === 1)
+    assert(split6.nodeId === 10)
+    assert(compareDouble(split6.prediction, 3.33333))
+    assert(split6.weight === 15.0)
+    assert(compareDouble(split6.impurity, 0.22222))
+    assert(split6.splitImpurity.get === 0.0)
+    assert(split6.nodeSplit.get.featureId === 1)
+    assert(split6.nodeSplit.get.parentNodeId === 10)
+    assert(split6.nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId])
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 3)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(11) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 10)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeSubTreeHash.size === 0)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(23) === -1)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(24) === -1)
+
+    val split7 = splits.next()
+    assert(compareDouble(split7.prediction, 2.83333))
+    assert(split7.nodeId === 11)
+    assert(compareDouble(split7.impurity, 0.138889))
+    assert(split7.treeId === 1)
+    assert(split7.splitImpurity.get === 0.0)
+    assert(split7.nodeSplit.get.isInstanceOf[NumericSplitOnBinId])
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].parentNodeId === 11)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].featureId === 0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].splitBinId === 3)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === 25)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 26)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftWeight === 5)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightWeight === 2)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftSubTreeHash === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightSubTreeHash === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanBinId === 10)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanNodeId === 27)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanWeight === 5)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanSubTreeHash === -1)
+  }
+
+  test("Test VarianceStatistics with Missing Values Degenerate Cases") {
+    val numTrees = 2
+    val nodeSplitsPerTree = Array.fill[mutable.Queue[NodeSplitOnBinId]](numTrees)(mutable.Queue[NodeSplitOnBinId]())
+
+    nodeSplitsPerTree(0).enqueue(NumericSplitOnBinId(2, 3, 5, 13, 14, 2.0, 2.0, -1, -1), NumericSplitOnBinId(5, 1, 2, 15, 16, 3.0, 6.0, 0, -1))
+    nodeSplitsPerTree(1).enqueue(NumericSplitOnBinId(3, 4, 2, 7, 8, 2.0, 5.0, -1, -1), CategoricalSplitOnBinId(4, 3, mutable.Map[Int, Int](1 -> 10, 4 -> 11), mutable.Map[Int, Double](10 -> 3.0, 11 -> 2.0), mutable.Map[Int, Int]()))
+
+    val nodeDepths = Array.fill[mutable.Map[Int, Int]](2)(mutable.Map[Int, Int]())
+    nodeDepths(0).put(13, 5)
+    nodeDepths(0).put(14, 5)
+    nodeDepths(0).put(16, 7)
+    nodeDepths(1).put(7, 3)
+    nodeDepths(1).put(8, 3)
+    nodeDepths(1).put(10, 6)
+    nodeDepths(1).put(11, 6)
+
+    val scheduledLookup = ScheduledNodeSplitLookup.createLookupForNodeSplits(nodeSplitsPerTree, 100)
+    val treeSeeds = new Array[Int](numTrees)
+    var treeId = 0
+    val randGen = scala.util.Random
+    while (treeId < numTrees) {
+      treeSeeds(treeId) = randGen.nextInt()
+      treeId += 1
+    }
+
+    val mtry = 4
+    val numBinsPerFeature = Array[Int](11, 12, 17, 13, 15, 9)
+
+    val featureBins = new Array[Bins](6)
+    var featId = 0
+    while (featId < numBinsPerFeature.length) {
+      if (featId != 1) {
+        val bins = mutable.ArrayBuffer[NumericBin]()
+        bins += NumericBin(Double.NegativeInfinity, 0)
+        val numBinsWithoutNaN = if (featId == 0) {
+          numBinsPerFeature(featId) - 1
+        } else {
+          numBinsPerFeature(featId)
+        }
+
+        while (bins.length < numBinsWithoutNaN) {
+          bins += NumericBin(bins.length - 1, bins.length)
+        }
+
+        if (featId == 0) {
+          featureBins(featId) = NumericBins(bins.toArray, numBinsPerFeature(featId) - 1)
+        } else {
+          featureBins(featId) = NumericBins(bins.toArray)
+        }
+      } else {
+        featureBins(featId) = CategoricalBins(numBinsPerFeature(featId) - 1, 11) // The last one is missing value bin.
+      }
+
+      featId += 1
+    }
+
+    // Create a variance statistics object with all the features per node.
+    val varStats2 = new VarianceStatistics(
+      scheduledLookup,
+      numBinsPerFeature,
+      treeSeeds,
+      numBinsPerFeature.length)
+
+    // Add some samples and make sure that we get the right statistics accumulated.
+    varStats2.addUnsignedByteSample(
+      treeId = 0,
+      nodeId = 13,
+      sample = (1.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 0,
+      nodeId = 14,
+      sample = (2.0, Array[Byte](Discretizer.convertToUnsignedByte(4), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(15), Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5)), Array[Byte](2, 3)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 0,
+      nodeId = 16,
+      sample = (4.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(6), Discretizer.convertToUnsignedByte(7)), Array[Byte](5, 1)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 0,
+      nodeId = 16,
+      sample = (4.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(4)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 8,
+      sample = (1.0, Array[Byte](Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(8)), Array[Byte](4, 2)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 7,
+      sample = (3.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 10,
+      sample = (3.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 10,
+      sample = (4.0, Array[Byte](Discretizer.convertToUnsignedByte(2), Discretizer.convertToUnsignedByte(11), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 11,
+      sample = (3.0, Array[Byte](Discretizer.convertToUnsignedByte(10), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 5)))
+
+    varStats2.addUnsignedByteSample(
+      treeId = 1,
+      nodeId = 11,
+      sample = (2.0, Array[Byte](Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(5), Discretizer.convertToUnsignedByte(7), Discretizer.convertToUnsignedByte(1), Discretizer.convertToUnsignedByte(3), Discretizer.convertToUnsignedByte(2)), Array[Byte](3, 2)))
+
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 0)._1 === 0.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 0)._2 === 0.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 0)._3 === 0.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 4)._1 === 1.0 * 2.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 4)._2 === 1.0 * 2.0)
+    assert(varStats2.getBinStats(treeId = 0, nodeId = 13, featureId = 0, binId = 4)._3 === 2.0)
+
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 0)._1 === 0.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 0)._2 === 0.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 0)._3 === 0.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 1)._1 === 3.0 * 5.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 1)._2 === 9.0 * 5.0)
+    assert(varStats2.getBinStats(treeId = 1, nodeId = 7, featureId = 3, binId = 1)._3 === 5.0)
+
+    val nextNodeIdsPerTree = Array[Int](21, 23)
+
+    // Now, get the splits.
+    val splits = varStats2.computeNodePredictionsAndSplits(
+      featureBins,
+      nextNodeIdsPerTree,
+      nodeDepths,
+      SequoiaForestOptions(
+        numTrees = 2,
+        treeType = TreeType.Regression_Variance,
+        mtry = 6,
+        minSplitSize = 2,
+        maxDepth = -1,
+        numNodesPerIteration = 100,
+        localTrainThreshold = 100000,
+        numSubTreesPerIteration = 3,
+        storeModelInMemory = true,
+        outputStorage = new NullSinkForestStorage,
+        numClasses = None,
+        imputationType = ImputationType.SplitOnMissing),
+      new scala.util.Random(17))
+
+    assert(nodeDepths(0).size === 0)
+    assert(nodeDepths(1).size === 4) // There should be 6 child nodes (due to all binary splits and NaN bins).
+
+    val split1 = splits.next()
+    assert(split1.treeId === 0)
+    assert(split1.nodeId === 13)
+    assert(split1.prediction === 1.0)
+    assert(split1.weight === 2.0)
+    assert(split1.impurity === 0.0)
+    assert(split1.splitImpurity === None)
+    assert(split1.nodeSplit === None)
+
+    val split2 = splits.next()
+    assert(split2.treeId === 0)
+    assert(split2.nodeId === 14)
+    assert(split2.prediction === 2.0)
+    assert(split2.weight === 2.0)
+    assert(split2.impurity === 0.0)
+    assert(split2.splitImpurity === None)
+    assert(split2.nodeSplit === None)
+
+    val split3 = splits.next()
+    assert(split3.treeId === 0)
+    assert(split3.nodeId === 16)
+    assert(split3.prediction === 4.0)
+    assert(split3.weight === 8.0)
+    assert(split3.impurity === 0.0)
+    assert(split3.splitImpurity === None)
+    assert(split3.nodeSplit === None)
+
+    val split4 = splits.next()
+    assert(split4.treeId === 1)
+    assert(split4.nodeId === 7)
+    assert(split4.prediction === 3.0)
+    assert(split4.weight === 5.0)
+    assert(split4.impurity === 0.0)
+    assert(split4.splitImpurity === None)
+    assert(split4.nodeSplit === None)
+
+    val split5 = splits.next()
+    assert(split5.treeId === 1)
+    assert(split5.nodeId === 8)
+    assert(split5.prediction === 1.0)
+    assert(split5.weight === 2.0)
+    assert(split5.impurity === 0.0)
+    assert(split5.splitImpurity === None)
+    assert(split5.nodeSplit === None)
+
+    val split6 = splits.next()
+    assert(split6.treeId === 1)
+    assert(split6.nodeId === 10)
+    assert(compareDouble(split6.prediction, 3.5))
+    assert(split6.weight === 10.0)
+    assert(compareDouble(split6.impurity, 0.25))
+    assert(split6.splitImpurity.get === 0.0)
+    assert(split6.nodeSplit.get.featureId === 1)
+    assert(split6.nodeSplit.get.parentNodeId === 10)
+    assert(split6.nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId])
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 2)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(11) === 24)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 5)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeSubTreeHash.size === 0)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(23) === -1)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].getSubTreeHash(24) === -1)
+
+    val split7 = splits.next()
+    assert(compareDouble(split7.prediction, 2.714286))
+    assert(split7.nodeId === 11)
+    assert(compareDouble(split7.impurity, 0.2040801))
+    assert(split7.treeId === 1)
+    assert(split7.splitImpurity.get === 0.0)
+    assert(split7.nodeSplit.get.isInstanceOf[NumericSplitOnBinId])
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].parentNodeId === 11)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].featureId === 0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].splitBinId === 0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftId === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightId === 25)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftWeight === 0.0)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightWeight === 2)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].leftSubTreeHash === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].rightSubTreeHash === -1)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanBinId === 10)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanNodeId === 26)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanWeight === 5)
+    assert(split7.nodeSplit.get.asInstanceOf[NumericSplitOnBinId].nanSubTreeHash === -1)
   }
 }

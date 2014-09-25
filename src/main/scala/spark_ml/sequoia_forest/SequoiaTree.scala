@@ -40,6 +40,7 @@ object TreeType extends Enumeration {
 trait NodeSplit extends Serializable {
   val featureId: Int
   def selectChildNode(featureVal: Double): Int
+  def getChildNodeIds: Seq[Int]
 }
 
 /**
@@ -48,14 +49,35 @@ trait NodeSplit extends Serializable {
  * @param splitValue The value of the feature to split on.
  * @param leftId The ID of the left child.
  * @param rightId The ID of the right child.
+ * @param missingValueId The ID of the child to follow if the feature value is NaN.
  */
 case class NumericSplit(
     featureId: Int,
     splitValue: Double,
     leftId: Int,
-    rightId: Int) extends NodeSplit {
+    rightId: Int,
+    missingValueId: Int = -1) extends NodeSplit {
+  /**
+   * If no child is found, this will return -1.
+   * @param featureVal The feature value that we want to split on.
+   * @return The ID of the child node that we want to go to.
+   */
   def selectChildNode(featureVal: Double): Int = {
-    if (featureVal < splitValue) leftId else rightId
+    if (featureVal.isNaN) {
+      missingValueId
+    } else if (featureVal < splitValue) {
+      leftId
+    } else {
+      rightId
+    }
+  }
+
+  def getChildNodeIds: Seq[Int] = {
+    if (missingValueId == -1) {
+      Seq[Int](leftId, rightId)
+    } else {
+      Seq[Int](leftId, rightId, missingValueId)
+    }
   }
 }
 
@@ -63,13 +85,28 @@ case class NumericSplit(
  * Categorical split.
  * @param featureId The ID of the feature to split on (should be a categorical feature).
  * @param featValToNodeId The map from feature values to child nodes.
+ * @param missingValueId The ID of the child to follow if the feature value is NaN.
  */
 case class CategoricalSplit(
     featureId: Int,
-    featValToNodeId: mutable.Map[Int, Int]) extends NodeSplit {
+    featValToNodeId: mutable.Map[Int, Int],
+    missingValueId: Int = -1) extends NodeSplit {
   def selectChildNode(featureVal: Double): Int = {
-    // If the mapped node is not found, return -1.
-    featValToNodeId.getOrElse(featureVal.toInt, -1)
+    if (featureVal.isNaN) {
+      missingValueId
+    } else {
+      // If the mapped node is not found, return -1.
+      featValToNodeId.getOrElse(featureVal.toInt, -1)
+    }
+  }
+
+  def getChildNodeIds: Seq[Int] = {
+    val r = featValToNodeId.values.toSet
+    if (missingValueId == -1) {
+      r.toSeq
+    } else {
+      r.toSeq ++ Seq[Int](missingValueId)
+    }
   }
 }
 
@@ -125,16 +162,34 @@ case class SequoiaTree(var treeId: Int) {
   /**
    * Predict the output from the given features - features should be in the same order as the ones that the tree trained on.
    * @param features Feature values.
-   * @return Prediction (Double)
+   * @return Prediction and weight (Double, Double)
    */
-  def predict(features: Array[Double]): Double = {
+  def predict(features: Array[Double]): (Double, Double) = {
     var curNode = nodes(1) // Root node is always 1.
     while (curNode.split != None) {
       val split = curNode.split.get
-      val childId = curNode.split.get.selectChildNode(features(split.featureId))
+      var childId = curNode.split.get.selectChildNode(features(split.featureId))
+      if (childId == -1) {
+        // If the child is not found, we'll go down the path of the child node with the largest weight.
+        val allChildIds = curNode.split.get.getChildNodeIds
+        var maxWeight = 0.0
+        allChildIds.foreach(ci => {
+          val childWeight = if (nodes.contains(ci)) {
+            nodes(ci).weight
+          } else {
+            subTrees(ci).nodes(1).weight
+          }
+
+          if (childWeight > maxWeight) {
+            maxWeight = childWeight
+            childId = ci
+          }
+        })
+      }
+
       if (!nodes.contains(childId)) {
         if (!subTrees.contains(childId)) {
-          return curNode.prediction
+          return (curNode.prediction, curNode.weight)
         } else {
           return subTrees(childId).predict(features)
         }
@@ -143,7 +198,7 @@ case class SequoiaTree(var treeId: Int) {
       }
     }
 
-    curNode.prediction
+    (curNode.prediction, curNode.weight)
   }
 }
 
@@ -162,9 +217,9 @@ case class SequoiaForest(
   /**
    * Predict from the features.
    * @param features A double array of features.
-   * @return Prediction (could be classification or regression).
+   * @return Prediction(s) and corresponding weight(s) (e.g. probabilities or variances of predictions, etc.)
    */
-  def predict(features: Array[Double]): Double = {
+  def predict(features: Array[Double]): Array[(Double, Double)] = {
     treeType match {
       case TreeType.Classification_InfoGain => predictClass(features)
       case TreeType.Regression_Variance => predictRegression(features)
@@ -174,41 +229,47 @@ case class SequoiaForest(
   /**
    * Predict the class ouput from the given features - features should be in the same order as the ones that the tree trained on.
    * @param features Feature values.
-   * @return Prediction (Double)
+   * @return Predictions and their probabilities an array of (Double, Double)
    */
-  private def predictClass(features: Array[Double]): Double = {
-    val predictions = mutable.Map[Double, Int]() // Predicted label and its count.
+  private def predictClass(features: Array[Double]): Array[(Double, Double)] = {
+    val predictions = mutable.Map[Double, Double]() // Predicted label and its count.
     var treeId = 0
     while (treeId < trees.length) {
       val tree = trees(treeId)
-      val prediction = tree.predict(features)
+      val (prediction, _) = tree.predict(features)
       predictions.getOrElseUpdate(prediction, 0)
-      predictions(prediction) += 1
+      predictions(prediction) += 1.0
 
       treeId += 1
     }
 
-    // Return consensus as the predicted value.
-    val consensus = predictions.maxBy(_._2)._1
-    consensus
+    // Sort the predictions by the number of occurrences.
+    // The first element has the highest number of occurrences.
+    val sortedPredictions = predictions.toArray.sorted(Ordering.by[(Double, Double), Double](-_._2))
+    sortedPredictions.map(p => (p._1, p._2 / trees.length.toDouble)).toArray
   }
 
   /**
    * Predict a continuous ouput from the given features - features should be in the same order as the ones that the tree trained on.
    * @param features Feature values.
-   * @return Prediction (Double)
+   * @return Prediction and its variance (a single element array of (Double, Double))
    */
-  private def predictRegression(features: Array[Double]): Double = {
+  private def predictRegression(features: Array[Double]): Array[(Double, Double)] = {
     var predictionSum = 0.0
+    var predictionSqrSum = 0.0
     var treeId = 0
     while (treeId < trees.length) {
       val tree = trees(treeId)
-      predictionSum += tree.predict(features)
+      val (prediction, _) = tree.predict(features)
+      predictionSum += prediction
+      predictionSqrSum += prediction * prediction
 
       treeId += 1
     }
 
-    predictionSum / trees.length.toDouble
+    val predAvg = predictionSum / trees.length.toDouble
+    val predVar = predictionSqrSum / trees.length.toDouble - predAvg * predAvg
+    Array[(Double, Double)]((predAvg, predVar))
   }
 }
 
@@ -294,6 +355,7 @@ object SequoiaForestWriter {
     writeDouble(split.splitValue, outputStream)
     writeInt(split.leftId, outputStream)
     writeInt(split.rightId, outputStream)
+    writeInt(split.missingValueId, outputStream)
   }
 
   /**
@@ -309,6 +371,8 @@ object SequoiaForestWriter {
       writeInt(key_value._1, outputStream)
       writeInt(key_value._2, outputStream)
     })
+
+    writeInt(split.missingValueId, outputStream)
   }
 
   /**
@@ -539,8 +603,9 @@ object SequoiaForestReader {
         val splitValue = readDouble(inputStream)
         val leftId = readInt(inputStream)
         val rightId = readInt(inputStream)
+        val missingValueId = readInt(inputStream)
 
-        NumericSplit(featureId = featId, splitValue = splitValue, leftId = leftId, rightId = rightId)
+        NumericSplit(featureId = featId, splitValue = splitValue, leftId = leftId, rightId = rightId, missingValueId = missingValueId)
       } else {
         val featId = readInt(inputStream)
         val featValToNodeId = mutable.Map[Int, Int]()
@@ -553,7 +618,9 @@ object SequoiaForestReader {
           i += 1
         }
 
-        CategoricalSplit(featureId = featId, featValToNodeId = featValToNodeId)
+        val missingValueId = readInt(inputStream)
+
+        CategoricalSplit(featureId = featId, featValToNodeId = featValToNodeId, missingValueId = missingValueId)
       }
 
       SequoiaNode(nodeId, prediction, impurity, weight, splitImpurity, Some(split))

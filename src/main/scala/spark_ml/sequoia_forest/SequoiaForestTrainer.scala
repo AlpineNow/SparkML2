@@ -25,6 +25,20 @@ import java.io._
 import java.util.Calendar
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
+import breeze.numerics._
+import scala.Some
+import spark_ml.discretization.NumericBins
+import spark_ml.discretization.InvalidCategoricalValueException
+
+import spire.implicits._
+
+object ImputationType extends Enumeration {
+  type ImputationType = Value
+  val SplitOnMissing = Value(0)
+  val PredictMissingNumbers = Value(1)
+  val Surrogate = Value(2)
+  val RFImpute = Value(3)
+}
 
 /**
  * The trainer for Sequoia Forest.
@@ -52,6 +66,8 @@ object SequoiaForestTrainer {
    * @param localTrainThreshold The number of training samples a node sees before the whole sub-tree is trained locally. -1 means that it'll be automatically determined (based on memory availability).
    * @param numSubTreesPerIteration The number of sub trees to train in each RDD iteration. -1 means that it'll be automatically determined (based on memory availability).
    * @param storageLevel Spark persistence level (whether data are cached to memory, local-disk or both). Defaults to MEMORY_AND_DISK.
+   * @param imputationType How to handle missing values.
+   * @param useLogLossForValidation Whether to use log loss for validation (only for binary classification).
    * @return A trained sequoia forest object if there's one in memory. Otherwise, the trees would be stored in the output path only and this would return None.
    */
   def discretizeAndTrain(
@@ -73,7 +89,9 @@ object SequoiaForestTrainer {
     numNodesPerIteration: Int,
     localTrainThreshold: Int,
     numSubTreesPerIteration: Int,
-    storageLevel: StorageLevel = StorageLevel.MEMORY_AND_DISK): Option[SequoiaForest] = {
+    storageLevel: StorageLevel = StorageLevel.MEMORY_AND_DISK,
+    imputationType: ImputationType.ImputationType = ImputationType.SplitOnMissing,
+    useLogLossForValidation: Boolean = false): Option[SequoiaForest] = {
 
     val maxBinCount = math.max(maxNumNumericBins, maxNumCategoricalBins)
     notifiee.newStatusMessage("The maximum number of bins in any feature is " + maxBinCount)
@@ -96,7 +114,7 @@ object SequoiaForestTrainer {
         labelIsCategorical = true,
         Map[String, String](
           StringConstants.NumBins_Numeric -> maxNumNumericBins.toString,
-          StringConstants.SubSampleCount_Numeric -> "10000", // TODO: Using 10000 samples to find numeric bins but should make this configurable.
+          StringConstants.SubSampleCount_Numeric -> "50000", // TODO: Using 50000 samples to find numeric bins but should make this configurable.
           StringConstants.MaxCardinality_Categoric -> maxNumCategoricalBins.toString,
           StringConstants.RandomSeed -> rng.nextInt().toString))
 
@@ -178,8 +196,7 @@ object SequoiaForestTrainer {
     notifiee.newStatusMessage("The average number of bins is " + avgNumBins)
 
     // TODO: This should be automatically determined from InfoGainStatistics bin count type.
-    val sizeOfLong = 8 // Currently we're using Long to count the number of elements.
-    val sizeOfDouble = 8
+    val sizeOfDouble = 8 // Using double for node statistics.
 
     // TODO: This is arbitrary. Should do better. Currently, keeping the maximum bytes in transit to be around 256MB.
     // TODO: In practice, the bytes in transit should be much smaller than this thanks to compression.
@@ -189,7 +206,7 @@ object SequoiaForestTrainer {
     val nodesPerIter = numNodesPerIteration match {
       case x if x == -1 =>
         val avgNumBytesPerNode = if (treeType == TreeType.Classification_InfoGain) {
-          avgNumBins * numRandomFeaturesPerNode.toDouble * (maxLabelValue + 1.0) * sizeOfLong.toDouble
+          avgNumBins * numRandomFeaturesPerNode.toDouble * (maxLabelValue + 1.0) * sizeOfDouble.toDouble
         } else {
           avgNumBins * numRandomFeaturesPerNode.toDouble * 3.0 * sizeOfDouble.toDouble
         }
@@ -231,10 +248,12 @@ object SequoiaForestTrainer {
         numSubTreesPerIteration = subTreeTrainers,
         storeModelInMemory = storeModelInMemory,
         outputStorage = outputStorage,
-        numClasses = numClasses
+        numClasses = numClasses,
+        imputationType = imputationType
       ),
       notifiee,
-      validationData)
+      validationData,
+      useLogLossForValidation)
 
     if (storeModelInMemory) {
       Some(forest)
@@ -250,6 +269,8 @@ object SequoiaForestTrainer {
    * @param options Training options.
    * @param notifiee Notifiee object. The progress messages of training would be sent to this object.
    * @param validationData Optional original validation data (untransformed with Double feature values) to use. Using this would mean models would be stored in memory (not recommended for large models).
+   * @param useLogLossForValidation Whether to use log loss for validation. Only for binary classification.
+   * @param randGen Random generator to use. Useful for testing.
    * @return Trained Sequoia Forest object.
    */
   private[spark_ml] def train(
@@ -257,10 +278,11 @@ object SequoiaForestTrainer {
     featureBins: Array[Bins],
     options: SequoiaForestOptions,
     notifiee: ProgressNotifiee,
-    validationData: Option[Array[(Double, Array[Double])]]): SequoiaForest = {
+    validationData: Option[Array[(Double, Array[Double])]],
+    useLogLossForValidation: Boolean = false,
+    randGen: Random = new Random()): SequoiaForest = {
 
     // Common structures we need for all types of inputs.
-    val randGen = new Random()
     val numFeatures = featureBins.length
     val numBinsPerFeature = Array.fill[Int](numFeatures)(0)
     val numTrees = options.numTrees
@@ -290,7 +312,7 @@ object SequoiaForestTrainer {
 
     var featId = 0
     while (featId < numFeatures) {
-      numBinsPerFeature(featId) = featureBins(featId).getCardinality
+      numBinsPerFeature(featId) = featureBins(featId).getCardinality + (if (featureBins(featId).getMissingValueBinIdx != -1) 1 else 0)
       featId += 1
     }
 
@@ -333,7 +355,8 @@ object SequoiaForestTrainer {
         featureBins,
         nextNodeIdsPerTree,
         nodeDepths,
-        options)
+        options,
+        randGen)
 
       // Create tree nodes and process splits if they exist.
       while (trainedNodes.hasNext) {
@@ -411,7 +434,7 @@ object SequoiaForestTrainer {
       // Measure accuracy against validation data.
       if (options.storeModelInMemory && !emptyTreesExist && validationData != None) {
         notifiee.newStatusMessage("Validation after " + iter + " iterations.")
-        validate(forest, validationData.get, notifiee)
+        validate(forest, validationData.get, notifiee, useLogLossForValidation)
       }
 
       // Show memory usages.
@@ -423,7 +446,7 @@ object SequoiaForestTrainer {
     // Do final validation if necessary.
     if (options.storeModelInMemory && validationData != None) {
       notifiee.newStatusMessage("Validation after full training.")
-      validate(forest, validationData.get, notifiee)
+      validate(forest, validationData.get, notifiee, useLogLossForValidation)
     }
 
     // Close the output streams if they exist.
@@ -455,24 +478,23 @@ object SequoiaForestTrainer {
     val weight = trainedNode.weight
     val impurity = trainedNode.impurity
 
-    if (trainedNode.nodeSplit != None) {
+    if (trainedNode.nodeSplit != None) { // Handle the inner node case.
       val splitImpurity = trainedNode.splitImpurity.get
       val nodeSplit = trainedNode.nodeSplit.get
       val childNodeIds = nodeSplit.getOrderedChildNodeIds
       var numUnderweightNodes = 0
       if (subTreeTrainingRowFilters != null) {
         // If the input is RDD, let's find out if there's a reason to perform local sub-tree training.
-        var childNodeIdx = 0
-        while (childNodeIdx < childNodeIds.length) {
-          val childNodeId = childNodeIds(childNodeIdx)
-          val childNodeWeight = nodeSplit.getChildNodeWeight(childNodeId)
-          if (childNodeWeight <= subTreeTrainThreshold.toDouble) {
-            numUnderweightNodes += 1
-            nodeSplit.setSubTreeHash(childNodeId, 0) // This makes sure that this child will be trained as a local sub-tree.
+        cfor(0)(_ < childNodeIds.length, _ + 1)(
+          childNodeIdx => {
+            val childNodeId = childNodeIds(childNodeIdx)
+            val childNodeWeight = nodeSplit.getChildNodeWeight(childNodeId)
+            if (childNodeWeight <= subTreeTrainThreshold.toDouble) {
+              numUnderweightNodes += 1
+              nodeSplit.setSubTreeHash(childNodeId, 0) // This makes sure that this child will be trained as a local sub-tree.
+            }
           }
-
-          childNodeIdx += 1
-        }
+        )
 
         if (numUnderweightNodes > 0) {
           subTreeTrainingRowFilters.addRowFilter(treeId, nodeSplit)
@@ -485,30 +507,54 @@ object SequoiaForestTrainer {
         scheduledRowFilters.addRowFilter(treeId, nodeSplit)
       }
 
-      // Create an inner node.
       val split: NodeSplit = trainedNode.nodeSplit.get match {
         case nodeSplitOnBinId: NumericSplitOnBinId =>
           val nodeSplitOnBinId = trainedNode.nodeSplit.get.asInstanceOf[NumericSplitOnBinId]
           val featureId = nodeSplitOnBinId.featureId
           val splitValue = featureBins(featureId).asInstanceOf[NumericBins].bins(nodeSplitOnBinId.splitBinId).lower
           NumericSplit(
-            featureId,
-            splitValue,
-            nodeSplitOnBinId.leftId,
-            nodeSplitOnBinId.rightId)
+            featureId = featureId,
+            splitValue = splitValue,
+            leftId = nodeSplitOnBinId.leftId,
+            rightId = nodeSplitOnBinId.rightId,
+            missingValueId = nodeSplitOnBinId.nanNodeId)
 
         case nodeSplitOnBinId: CategoricalSplitOnBinId =>
           val nodeSplitOnBinId = trainedNode.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId]
           val featureId = nodeSplitOnBinId.featureId
+          val missingValueBinId = featureBins(featureId).getMissingValueBinIdx
+          val missingValueNodeId = nodeSplitOnBinId.selectChildNode(missingValueBinId)
+          val featValToNodeId = if (nodeSplitOnBinId.binIdToNodeIdMap.contains(missingValueBinId)) {
+            val clone = nodeSplitOnBinId.binIdToNodeIdMap.clone()
+            clone.remove(missingValueBinId)
+            clone
+          } else {
+            nodeSplitOnBinId.binIdToNodeIdMap
+          }
+
           CategoricalSplit(
-            featureId,
-            nodeSplitOnBinId.binIdToNodeIdMap)
+            featureId = featureId,
+            featValToNodeId = featValToNodeId,
+            missingValueId = missingValueNodeId)
       }
 
-      SequoiaNode(nodeId, prediction, impurity, weight, Some(splitImpurity), Some(split))
+      // Create an inner node.
+      SequoiaNode(
+        nodeId = nodeId,
+        prediction = prediction,
+        impurity = impurity,
+        weight = weight,
+        splitImpurity = Some(splitImpurity),
+        split = Some(split))
     } else {
       // Create a leaf node.
-      SequoiaNode(nodeId, prediction, impurity, weight, None, None)
+      SequoiaNode(
+        nodeId = nodeId,
+        prediction = prediction,
+        impurity = impurity,
+        weight = weight,
+        splitImpurity = None,
+        split = None)
     }
   }
 
@@ -517,33 +563,59 @@ object SequoiaForestTrainer {
    * @param forest The forest model we want to validate.
    * @param data The in memory validation data.
    * @param notifiee The notifiee object.
+   * @param useLogLoss Whether to use log loss for binary classification.
    * @return Performance measure (e.g. accuracy or MSE).
    */
   def validate(
     forest: SequoiaForest,
     data: Array[(Double, Array[Double])],
-    notifiee: ProgressNotifiee): Double = {
+    notifiee: ProgressNotifiee,
+    useLogLoss: Boolean = false): Double = {
     if (forest.treeType == TreeType.Classification_InfoGain) {
-      var numCorrect = 0
-      var numRows = 0
-      while (numRows < data.length) {
-        val row = data(numRows)
-        val prediction = forest.predict(row._2)
-        if (prediction == row._1) numCorrect += 1
-        numRows += 1
-      }
+      if (useLogLoss) {
+        var logLossSum = 0.0
+        var numRows = 0
+        while (numRows < data.length) {
+          val row = data(numRows)
+          val prediction = forest.predict(row._2)
+          val prob = if (prediction(0)._1 == 1.0) {
+            prediction(0)._2
+          } else {
+            1.0 - prediction(0)._2
+          }
 
-      val accuracy = numCorrect.toDouble / numRows.toDouble
-      notifiee.newStatusMessage("Num Correct : " + numCorrect)
-      notifiee.newStatusMessage("Num Rows : " + numRows)
-      notifiee.newStatusMessage("Accuracy : " + numCorrect.toDouble / numRows.toDouble)
-      accuracy
+          val label = row._1
+          logLossSum += label * log2(prob) + (1.0 - label) * log2(1.0 - prob)
+          numRows += 1
+        }
+
+        val logLoss = logLossSum / -numRows.toDouble
+
+        notifiee.newStatusMessage("Log loss for binary classification:")
+        notifiee.newStatusMessage(logLoss.toString)
+        logLoss
+      } else {
+        var numCorrect = 0
+        var numRows = 0
+        while (numRows < data.length) {
+          val row = data(numRows)
+          val prediction = forest.predict(row._2)(0)._1
+          if (prediction == row._1) numCorrect += 1
+          numRows += 1
+        }
+
+        val accuracy = numCorrect.toDouble / numRows.toDouble
+        notifiee.newStatusMessage("Num Correct : " + numCorrect)
+        notifiee.newStatusMessage("Num Rows : " + numRows)
+        notifiee.newStatusMessage("Accuracy : " + numCorrect.toDouble / numRows.toDouble)
+        accuracy
+      }
     } else {
       var squaredErrorSum = 0.0
       var numRows = 0
       while (numRows < data.length) {
         val row = data(numRows)
-        val error = row._1 - forest.predict(row._2)
+        val error = row._1 - forest.predict(row._2)(0)._1
         squaredErrorSum += error * error
         numRows += 1
       }
@@ -568,6 +640,7 @@ object SequoiaForestTrainer {
  * @param storeModelInMemory Whether to store the trained model in memory.
  * @param outputStorage Where to store the output model.
  * @param numClasses Number of classes, if this is a classification model (required for classification).
+ * @param imputationType Imputation type (how to handle missing feature values).
  */
 case class SequoiaForestOptions(
   numTrees: Int,
@@ -580,7 +653,8 @@ case class SequoiaForestOptions(
   numSubTreesPerIteration: Int,
   storeModelInMemory: Boolean,
   outputStorage: ForestStorage,
-  numClasses: Option[Int]) // Only for classification.
+  numClasses: Option[Int],
+  imputationType: ImputationType.ImputationType) // Only for classification.
 
 /**
  * This is used to filter training rows to matching Node Ids.

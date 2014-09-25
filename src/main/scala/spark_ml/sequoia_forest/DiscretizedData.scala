@@ -22,6 +22,7 @@ import scala.collection.mutable
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import spark_ml.discretization.{ Bins, Discretizer }
+import spire.implicits._
 
 /**
  * Various data types for Sequoia Forest - can be RDD or local array. The features must be discretized into unsigned Byte or Short.
@@ -240,6 +241,8 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
       case x => x
     }
 
+    val imputationType = options.imputationType
+
     val numNodesPerIteration = options.numNodesPerIteration
     val numClasses = options.numClasses
     val numSubTreesToTrain = subTreeLookup.subTreeCount
@@ -299,7 +302,8 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
           numSubTreesPerIteration = 0,
           storeModelInMemory = true,
           outputStorage = new NullSinkForestStorage,
-          numClasses = numClasses),
+          numClasses = numClasses,
+          imputationType = imputationType),
         new ConsoleNotifiee,
         None)
 
@@ -330,6 +334,7 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
     treeSeeds: Array[Int],
     numBinsPerFeature: Array[Int],
     options: SequoiaForestOptions): AggregatedStatistics = {
+    // TODO: This seems stupid.
     val featureHandlerLocal = featureHandler.cloneMyself // To avoid serializing the entire DiscretizedData object.
 
     // First aggregate bin statistics across all the partitions.
@@ -339,27 +344,26 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
     val numClasses = options.numClasses
     val aggregatedArray = data.zip(nodeIdRDD).mapPartitions(rows => {
       val partitionStats = if (treeType == TreeType.Classification_InfoGain) {
-        InfoGainStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry, numClasses.get)
+        new InfoGainStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry, numClasses.get)
       } else {
-        VarianceStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry)
+        new VarianceStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry)
       }
 
       while (rows.hasNext) {
         val row = rows.next()
-        var treeId = 0
-        while (treeId < numTrees) {
-          val curNodeId = row._2(treeId)
-          val rowCnt = row._1._3(treeId).toInt
-          if (rowCnt > 0 && curNodeId >= 0) { // It can be -1 if the sample was used in a node that was trained locally as a sub-tree.
-            val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
-            if (nodeSplit != null) {
-              val childNodeId = nodeSplit.selectChildNode(featureHandlerLocal.convertToInt(row._1._2(nodeSplit.featureId)))
-              featureHandlerLocal.addRowToStats(partitionStats, treeId, childNodeId, row._1)
+        cfor(0)(_ < numTrees, _ + 1)(
+          treeId => {
+            val curNodeId = row._2(treeId)
+            val rowCnt = row._1._3(treeId).toInt
+            if (rowCnt > 0 && curNodeId >= 0) { // It can be -1 if the sample was used in a node that was trained locally as a sub-tree.
+              val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
+              if (nodeSplit != null) {
+                val childNodeId = nodeSplit.selectChildNode(featureHandlerLocal.convertToInt(row._1._2(nodeSplit.featureId)))
+                featureHandlerLocal.addRowToStats(partitionStats, treeId, childNodeId, row._1)
+              }
             }
           }
-
-          treeId += 1
-        }
+        )
       }
 
       Array(partitionStats.binStatsArray).toIterator
@@ -369,9 +373,9 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
     updateNodeIdRDD(rowFilterLookup, numTrees)
 
     val totalStats = if (treeType == TreeType.Classification_InfoGain) {
-      InfoGainStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry, numClasses.get)
+      new InfoGainStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry, numClasses.get)
     } else {
-      VarianceStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry)
+      new VarianceStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry)
     }
 
     totalStats.binStatsArray = aggregatedArray
@@ -387,31 +391,31 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
    * @param numTrees The number of trees that we are training.
    */
   private def updateNodeIdRDD(rowFilterLookup: ScheduledNodeSplitLookup, numTrees: Int, markSubTreesOnly: Boolean = false): Unit = {
+    // TODO: This seems stupid.
     val featureHandlerLocal = featureHandler.cloneMyself // To avoid serializing the entire DiscretizedData object.
 
     // Now, update all rows' node Ids.
     nodeIdRDD = data.zip(nodeIdRDD).map(row => {
       val nodeIds = row._2
-      var treeId = 0
-      while (treeId < numTrees) {
-        val curNodeId = row._2(treeId)
-        val rowCnt = row._1._3(treeId).toInt
-        if (rowCnt > 0 && curNodeId >= 0) { // It can be -1 if the sample was used in a node that was trained locally as a sub-tree.
-          val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
-          if (nodeSplit != null) {
-            val childNodeId = nodeSplit.selectChildNode(featureHandlerLocal.convertToInt(row._1._2(nodeSplit.featureId)))
-            // If the sub tree has is non-negative, it means that this child node has been scheduled to train as a sub-tree.
-            // We then set the appended nodeID to -1 to prevent this row from being used in future training.
-            if (nodeSplit.getSubTreeHash(childNodeId) >= 0) {
-              nodeIds(treeId) = -1
-            } else if (!markSubTreesOnly) {
-              nodeIds(treeId) = childNodeId
+      cfor(0)(_ < numTrees, _ + 1)(
+        treeId => {
+          val curNodeId = row._2(treeId)
+          val rowCnt = row._1._3(treeId).toInt
+          if (rowCnt > 0 && curNodeId >= 0) { // It can be -1 if the sample was used in a node that was trained locally as a sub-tree.
+            val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
+            if (nodeSplit != null) {
+              val childNodeId = nodeSplit.selectChildNode(featureHandlerLocal.convertToInt(row._1._2(nodeSplit.featureId)))
+              // If the sub tree has is non-negative, it means that this child node has been scheduled to train as a sub-tree.
+              // We then set the appended nodeID to -1 to prevent this row from being used in future training.
+              if (nodeSplit.getSubTreeHash(childNodeId) >= 0) {
+                nodeIds(treeId) = -1
+              } else if (!markSubTreesOnly) {
+                nodeIds(treeId) = childNodeId
+              }
             }
           }
         }
-
-        treeId += 1
-      }
+      )
 
       nodeIds
     })
@@ -430,16 +434,9 @@ class DiscretizedDataLocal[@specialized(Byte, Short) T](data: Array[((Double, Ar
    * @param numTrees Number of trees that we have.
    */
   override def initializeRowNodeIds(numTrees: Int): Unit = {
-    var rowId = 0
-    while (rowId < data.length) {
-      var treeId = 0
-      while (treeId < numTrees) {
-        data(rowId)._2(treeId) = 0
-        treeId += 1
-      }
-
-      rowId += 1
-    }
+    cfor(0)(_ < data.length, _ + 1)(
+      rowId => cfor(0)(_ < numTrees, _ + 1)(treeId => data(rowId)._2(treeId) = 0)
+    )
   }
 
   /**
@@ -468,32 +465,30 @@ class DiscretizedDataLocal[@specialized(Byte, Short) T](data: Array[((Double, Ar
     numBinsPerFeature: Array[Int],
     options: SequoiaForestOptions): AggregatedStatistics = {
     val aggregatedStats: AggregatedStatistics = if (options.treeType == TreeType.Classification_InfoGain) {
-      InfoGainStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, options.mtry, options.numClasses.get)
+      new InfoGainStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, options.mtry, options.numClasses.get)
     } else {
-      VarianceStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, options.mtry)
+      new VarianceStatistics(rowFilterLookup, numBinsPerFeature, treeSeeds, options.mtry)
     }
 
-    var rowId = 0
-    while (rowId < data.length) {
-      val row = data(rowId)
-      var treeId = 0
-      while (treeId < options.numTrees) {
-        val curNodeId = row._2(treeId)
-        val rowCnt = row._1._3(treeId).toInt
-        if (rowCnt > 0 && curNodeId >= 0) {
-          val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
-          if (nodeSplit != null) {
-            val childNodeId = nodeSplit.selectChildNode(featureHandler.convertToInt(row._1._2(nodeSplit.featureId)))
-            featureHandler.addRowToStats(aggregatedStats, treeId, childNodeId, row._1)
-            row._2(treeId) = childNodeId
+    cfor(0)(_ < data.length, _ + 1)(
+      rowId => {
+        val row = data(rowId)
+        cfor(0)(_ < options.numTrees, _ + 1)(
+          treeId => {
+            val curNodeId = row._2(treeId)
+            val rowCnt = row._1._3(treeId).toInt
+            if (rowCnt > 0 && curNodeId >= 0) {
+              val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
+              if (nodeSplit != null) {
+                val childNodeId = nodeSplit.selectChildNode(featureHandler.convertToInt(row._1._2(nodeSplit.featureId)))
+                featureHandler.addRowToStats(aggregatedStats, treeId, childNodeId, row._1)
+                row._2(treeId) = childNodeId
+              }
+            }
           }
-        }
-
-        treeId += 1
+        )
       }
-
-      rowId += 1
-    }
+    )
 
     aggregatedStats
   }

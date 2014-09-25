@@ -21,6 +21,8 @@ import org.apache.spark.rdd.RDD
 import spark_ml.util.Poisson
 import scala.util.Random
 
+import spire.implicits._
+
 object SamplingType extends Enumeration {
   type SamplingType = Value
   val SampleWithReplacement = Value(0)
@@ -53,18 +55,18 @@ object Bagger {
       rows.map(
         row => {
           val counts = Array.fill[Byte](numTrees)(0)
-          var treeId = 0
-          while (treeId < numTrees) {
-            val sampleCount = samplingType match {
-              case SamplingType.SampleWithReplacement => poisson.sample()
-              case SamplingType.SampleWithoutReplacement => if (rng.nextDouble() <= samplingRate) 1 else 0
-            }
+          cfor(0)(_ < numTrees, _ + 1)(
+            treeId => {
+              val sampleCount = samplingType match {
+                case SamplingType.SampleWithReplacement => poisson.sample()
+                case SamplingType.SampleWithoutReplacement => if (rng.nextDouble() <= samplingRate) 1 else 0
+              }
 
-            // We only allow a sample count value upto 127 since it's represented as a Byte.
-            // This shouldn't matter in practice since the probability of that happening should be close to 0.
-            counts(treeId) = math.min(sampleCount, 127).toByte
-            treeId += 1
-          }
+              // We only allow a sample count value upto 127 since it's represented as a Byte.
+              // This shouldn't matter in practice since the probability of that happening should be close to 0.
+              counts(treeId) = math.min(sampleCount, 127).toByte
+            }
+          )
 
           (row._1, row._2, counts)
         })
@@ -91,18 +93,18 @@ object Bagger {
     val rng = new Random(seed)
     data.map(row => {
       val counts = Array.fill[Byte](numTrees)(0)
-      var treeId = 0
-      while (treeId < numTrees) {
-        val sampleCount = samplingType match {
-          case SamplingType.SampleWithReplacement => poisson.sample()
-          case SamplingType.SampleWithoutReplacement => if (rng.nextDouble() <= samplingRate) 1 else 0
-        }
+      cfor(0)(_ < numTrees, _ + 1)(
+        treeId => {
+          val sampleCount = samplingType match {
+            case SamplingType.SampleWithReplacement => poisson.sample()
+            case SamplingType.SampleWithoutReplacement => if (rng.nextDouble() <= samplingRate) 1 else 0
+          }
 
-        // We only allow a sample count value upto 127 since it's represented as a Byte.
-        // This shouldn't matter in practice since the probability of that happening should be close to 0.
-        counts(treeId) = math.min(sampleCount, 127).toByte
-        treeId += 1
-      }
+          // We only allow a sample count value upto 127 since it's represented as a Byte.
+          // This shouldn't matter in practice since the probability of that happening should be close to 0.
+          counts(treeId) = math.min(sampleCount, 127).toByte
+        }
+      )
 
       (row._1, row._2, counts)
     })
