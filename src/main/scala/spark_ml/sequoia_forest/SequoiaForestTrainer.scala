@@ -571,30 +571,34 @@ object SequoiaForestTrainer {
     data: Array[(Double, Array[Double])],
     notifiee: ProgressNotifiee,
     useLogLoss: Boolean = false): Double = {
-    if (forest.treeType == TreeType.Classification_InfoGain) {
-      if (useLogLoss) {
-        var logLossSum = 0.0
-        var numRows = 0
-        while (numRows < data.length) {
-          val row = data(numRows)
-          val prediction = forest.predict(row._2)
-          val prob = if (prediction(0)._1 == 1.0) {
+    if (useLogLoss) {
+      var logLossSum = 0.0
+      var numRows = 0
+      while (numRows < data.length) {
+        val row = data(numRows)
+        val prediction = forest.predict(row._2)
+        val prob = if (forest.treeType == TreeType.Classification_InfoGain) {
+          if (prediction(0)._1 == 1.0) {
             prediction(0)._2
           } else {
             1.0 - prediction(0)._2
           }
-
-          val label = row._1
-          logLossSum += label * log2(prob) + (1.0 - label) * log2(1.0 - prob)
-          numRows += 1
+        } else {
+          prediction(0)._1
         }
 
-        val logLoss = logLossSum / -numRows.toDouble
+        val label = row._1
+        logLossSum += label * log2(prob) + (1.0 - label) * log2(1.0 - prob)
+        numRows += 1
+      }
 
-        notifiee.newStatusMessage("Log loss for binary classification:")
-        notifiee.newStatusMessage(logLoss.toString)
-        logLoss
-      } else {
+      val logLoss = logLossSum / -numRows.toDouble
+
+      notifiee.newStatusMessage("Log loss for binary classification:")
+      notifiee.newStatusMessage(logLoss.toString)
+      logLoss
+    } else {
+      if (forest.treeType == TreeType.Classification_InfoGain) {
         var numCorrect = 0
         var numRows = 0
         while (numRows < data.length) {
@@ -609,21 +613,21 @@ object SequoiaForestTrainer {
         notifiee.newStatusMessage("Num Rows : " + numRows)
         notifiee.newStatusMessage("Accuracy : " + numCorrect.toDouble / numRows.toDouble)
         accuracy
-      }
-    } else {
-      var squaredErrorSum = 0.0
-      var numRows = 0
-      while (numRows < data.length) {
-        val row = data(numRows)
-        val error = row._1 - forest.predict(row._2)(0)._1
-        squaredErrorSum += error * error
-        numRows += 1
-      }
+      } else {
+        var squaredErrorSum = 0.0
+        var numRows = 0
+        while (numRows < data.length) {
+          val row = data(numRows)
+          val error = row._1 - forest.predict(row._2)(0)._1
+          squaredErrorSum += error * error
+          numRows += 1
+        }
 
-      val mse = squaredErrorSum / numRows.toDouble
-      notifiee.newStatusMessage("Num Rows : " + numRows)
-      notifiee.newStatusMessage("Mean Squared Error : " + mse)
-      mse
+        val mse = squaredErrorSum / numRows.toDouble
+        notifiee.newStatusMessage("Num Rows : " + numRows)
+        notifiee.newStatusMessage("Mean Squared Error : " + mse)
+        mse
+      }
     }
   }
 }

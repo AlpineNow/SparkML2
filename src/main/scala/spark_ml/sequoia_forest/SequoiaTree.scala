@@ -76,7 +76,11 @@ case class NumericSplit(
     if (missingValueId == -1) {
       Seq[Int](leftId, rightId)
     } else {
-      Seq[Int](leftId, rightId, missingValueId)
+      if (leftId == -1) {
+        Seq[Int](rightId, missingValueId)
+      } else {
+        Seq[Int](leftId, rightId, missingValueId)
+      }
     }
   }
 }
@@ -176,8 +180,10 @@ case class SequoiaTree(var treeId: Int) {
         allChildIds.foreach(ci => {
           val childWeight = if (nodes.contains(ci)) {
             nodes(ci).weight
-          } else {
+          } else if (subTrees.contains(ci)) {
             subTrees(ci).nodes(1).weight
+          } else {
+            return (curNode.prediction, curNode.weight)
           }
 
           if (childWeight > maxWeight) {

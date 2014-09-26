@@ -148,9 +148,9 @@ object EqualFrequencyDiscretizer extends Discretizer {
             i => {
               val sampleIdx = selectedSampleIndices(i)
               if (sampleIdx < mySampleCount) {
-                mergedSample(i) = mySample(sampleIdx)
+                mergedSample += mySample(sampleIdx)
               } else {
-                mergedSample(i) = theirSample(sampleIdx - mySampleCount)
+                mergedSample += theirSample(sampleIdx - mySampleCount)
               }
             }
           )

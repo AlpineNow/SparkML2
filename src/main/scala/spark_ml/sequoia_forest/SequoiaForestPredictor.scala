@@ -168,21 +168,25 @@ object SequoiaForestPredictor {
         val validationStats = predictionRDD.zip(labelRDD).map(row => {
           val prediction = row._1._3
           val label = row._2
-          if (treeType == TreeType.Classification_InfoGain) {
-            if (computeLogLoss) {
-              val prob = if (prediction(0)._1 == 1.0) {
+          if (computeLogLoss) {
+            val prob = if (treeType == TreeType.Classification_InfoGain) {
+              if (prediction(0)._1 == 1.0) {
                 prediction(0)._2
               } else {
                 1.0 - prediction(0)._2
               }
-
-              (label * log2(prob) + (1.0 - label) * log2(1.0 - prob), 1.0)
             } else {
-              if (label == prediction(0)._1) (1.0, 1.0) else (0.0, 1.0)
+              prediction(0)._1
             }
+
+            (label * log2(prob) + (1.0 - label) * log2(1.0 - prob), 1.0)
           } else {
-            val error = label - prediction(0)._1
-            (error * error, 1.0)
+            if (treeType == TreeType.Classification_InfoGain) {
+              if (label == prediction(0)._1) (1.0, 1.0) else (0.0, 1.0)
+            } else {
+              val error = label - prediction(0)._1
+              (error * error, 1.0)
+            }
           }
         }).reduce((a, b) => {
           if (treeType == TreeType.Classification_InfoGain) {
@@ -196,20 +200,20 @@ object SequoiaForestPredictor {
         })
 
         // Print validation results.
-        if (treeType == TreeType.Classification_InfoGain) {
-          if (computeLogLoss) {
-            println("Log loss for binary classification:")
-            println(validationStats._1 / -validationStats._2)
-          } else {
+        if (computeLogLoss) {
+          println("Log loss for binary classification:")
+          println(validationStats._1 / -validationStats._2)
+        } else {
+          if (treeType == TreeType.Classification_InfoGain) {
             println("Accuracy for classification:")
             println("Num Correct : " + validationStats._1.toInt)
             println("Num Total : " + validationStats._2.toInt)
             println("Accuracy : " + validationStats._1 / validationStats._2)
+          } else {
+            println("MSE for regression:")
+            println("Mean Squared Error : " + validationStats._1)
+            println("Num Total : " + validationStats._2.toInt)
           }
-        } else {
-          println("MSE for regression:")
-          println("Mean Squared Error : " + validationStats._1)
-          println("Num Total : " + validationStats._2.toInt)
         }
       }
     } catch {
