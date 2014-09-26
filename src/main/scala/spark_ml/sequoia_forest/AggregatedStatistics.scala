@@ -195,7 +195,7 @@ abstract class BinStatisticsArray(val binStats: Array[Double], val numElemsPerBi
    * @param offset offset to the feature of the node.
    * @param randGen Random number generator in case it's needed. Useful for testing.
    */
-  def sortCategoricalFeatureBins(numBins: Int, offset: Int, randGen: scala.util.Random): mutable.ArrayBuffer[Int]
+  def sortCategoricalFeatureBins(numBins: Int, offset: Int, randGen: scala.util.Random): Array[Int]
 
   /**
    * The computeSplit uses a class derived from this interface to find best splits.

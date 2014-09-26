@@ -476,7 +476,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
       new scala.util.Random(17))
 
     assert(forest.trees.length === 1)
-    assert(forest.trees(0).getNodeCount === 18)
+    assert(forest.trees(0).getNodeCount === 16)
     assert(forest.trees(0).subTrees.size === 0)
     assert(forest.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest.trees(0).nodes(1).impurity, 1.916716186961402))
@@ -506,18 +506,18 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
       new scala.util.Random(17))
 
     assert(forest2.trees.length === 1)
-    assert(forest2.trees(0).getNodeCount === 18)
-    assert(forest2.trees(0).subTrees.size === 7)
+    assert(forest2.trees(0).getNodeCount === 16)
+    assert(forest2.trees(0).subTrees.size === 6)
     assert(forest2.trees(0).nodes(1).prediction === 2.0)
     assert(compareDouble(forest2.trees(0).nodes(1).impurity, 1.916716186961402))
 
     testDataRaw.foreach(row => assert(forest2.predict(row._2)(0)._1 === row._1))
 
     // Make sure that the variable importances are as expected.
-    assert(compareDouble(forest.varImportance.featureImportance(0), 35.0603))
-    assert(compareDouble(forest.varImportance.featureImportance(1), 22.4412))
-    assert(compareDouble(forest2.varImportance.featureImportance(0), 35.0603))
-    assert(compareDouble(forest2.varImportance.featureImportance(1), 22.4412))
+    assert(compareDouble(forest.varImportance.featureImportance(0), 39.3653))
+    assert(compareDouble(forest.varImportance.featureImportance(1), 18.1362))
+    assert(compareDouble(forest2.varImportance.featureImportance(0), 39.3653))
+    assert(compareDouble(forest2.varImportance.featureImportance(1), 18.1362))
   }
 
   test("Train a regression tree 1 - unsigned Byte features RDD") {

@@ -17,10 +17,10 @@
 
 package spark_ml.sequoia_forest
 
-import scala.collection.mutable
-
 import spire.implicits._
 import breeze.numerics.log2
+
+import spark_ml.util.Sorting._
 
 /**
  * This is used to build a ClassificationStatisticsArray object.
@@ -134,12 +134,14 @@ class ClassificationStatisticsArray(binStats: Array[Double], numClasses: Int) ex
    * @param offset offset to the feature of the node.
    * @param randGen Random number generator in case it's needed.
    */
-  override def sortCategoricalFeatureBins(numBins: Int, offset: Int, randGen: scala.util.Random): mutable.ArrayBuffer[Int] = {
+  override def sortCategoricalFeatureBins(numBins: Int, offset: Int, randGen: scala.util.Random): Array[Int] = {
+    val binIds_notEmpty = Array.fill[Int](numBins)(0)
+    var curBinIdCursor = 0
+
     // In order to perform binary splits on categorical features, we need to sort the bin Ids based on some criteria.
     // We also want to exclude all the zero weight category values.
     // Go through the bins and compute the criteria.
     if (numClasses == 2) { // For binary classifications, we can sort by the proportions of 1's.
-      val binIds_notEmpty = new mutable.ArrayBuffer[Int]()
       val binCriteria = Array.fill[Double](numBins)(0.0)
       cfor(0)(_ < numBins, _ + 1)(
         binId => {
@@ -148,29 +150,34 @@ class ClassificationStatisticsArray(binStats: Array[Double], numClasses: Int) ex
           val numOnes = binStats(binOffset + 1)
           val binWeight = numZeroes + numOnes
           if (binWeight > 0.0) {
-            binIds_notEmpty += binId
+            binIds_notEmpty(curBinIdCursor) = binId
+            curBinIdCursor += 1
             binCriteria(binId) = numOnes / binWeight
           }
         }
       )
 
       // Now sort the non empty bins according to the proportion criteria.
-      binIds_notEmpty.sorted(Ordering.by[Int, Double](binCriteria(_)))
+      val toReturn = binIds_notEmpty.slice(0, curBinIdCursor)
+      quickSort[Int](toReturn)(Ordering.by[Int, Double](binCriteria(_)))
+      toReturn
     } else {
-      val binIds_notEmpty = new mutable.ArrayBuffer[Int]()
       cfor(0)(_ < numBins, _ + 1)(
         binId => {
           val binOffset = offset + binId * numClasses
           var binWeight = 0.0
           cfor(0)(_ < numClasses, _ + 1)(labelId => binWeight += binStats(binOffset + labelId))
           if (binWeight > 0.0) {
-            binIds_notEmpty += binId
+            binIds_notEmpty(curBinIdCursor) = binId
+            curBinIdCursor += 1
           }
         }
       )
 
       // For multi-class classification, the sorting is done through a random order.
-      binIds_notEmpty.sorted(Ordering.by[Int, Double](_ => randGen.nextDouble()))
+      val toReturn = binIds_notEmpty.slice(0, curBinIdCursor)
+      quickSort[Int](toReturn)(Ordering.by[Int, Double](_ => randGen.nextDouble()))
+      toReturn
     }
   }
 

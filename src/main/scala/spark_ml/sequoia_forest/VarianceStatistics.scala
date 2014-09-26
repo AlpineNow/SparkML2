@@ -17,9 +17,9 @@
 
 package spark_ml.sequoia_forest
 
-import scala.collection.mutable
-
 import spire.implicits._
+
+import spark_ml.util.Sorting._
 
 /**
  * This is used to build a RegressionStatisticsArray object.
@@ -122,25 +122,29 @@ class RegressionStatisticsArray(binStats: Array[Double]) extends BinStatisticsAr
    * @param offset offset to the feature of the node.
    * @param randGen not used for this.
    */
-  override def sortCategoricalFeatureBins(numBins: Int, offset: Int, randGen: scala.util.Random): mutable.ArrayBuffer[Int] = {
+  override def sortCategoricalFeatureBins(numBins: Int, offset: Int, randGen: scala.util.Random): Array[Int] = {
     // In order to perform binary splits on categorical features, we need to sort the bin Ids by the average.
     // We also want to exclude all the zero weight category values.
     // Go through the bins and compute the averages.
-    val binIds_notEmpty = new mutable.ArrayBuffer[Int]()
+    val binIds_notEmpty = Array.fill[Int](numBins)(0)
+    var curBinIdCursor = 0
     val binCriteria = Array.fill[Double](numBins)(0.0)
     cfor(0)(_ < numBins, _ + 1)(
       binId => {
         val binOffset = offset + binId * 3
         val binWeight = binStats(binOffset + 2)
         if (binWeight > 0.0) {
-          binIds_notEmpty += binId
+          binIds_notEmpty(curBinIdCursor) = binId
+          curBinIdCursor += 1
           binCriteria(binId) = binStats(binOffset) / binWeight
         }
       }
     )
 
     // Now sort the non empty bins according to the proportion criteria.
-    binIds_notEmpty.sorted(Ordering.by[Int, Double](binCriteria(_)))
+    val toReturn = binIds_notEmpty.slice(0, curBinIdCursor)
+    quickSort[Int](toReturn)(Ordering.by[Int, Double](binCriteria(_)))
+    toReturn
   }
 
   /**
