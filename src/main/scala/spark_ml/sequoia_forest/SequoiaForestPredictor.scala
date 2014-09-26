@@ -179,7 +179,7 @@ object SequoiaForestPredictor {
               prediction(0)._1
             }
 
-            (label * log2(prob) + (1.0 - label) * log2(1.0 - prob), 1.0)
+            (label * log2(math.max(prob, 0.000001)) + (1.0 - label) * log2(math.max(1.0 - prob, 0.000001)), 1.0)
           } else {
             if (treeType == TreeType.Classification_InfoGain) {
               if (label == prediction(0)._1) (1.0, 1.0) else (0.0, 1.0)
