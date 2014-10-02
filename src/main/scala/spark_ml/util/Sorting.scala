@@ -152,7 +152,7 @@ object Sorting {
           var l = off
           var n = off + len - 1
           if (len > 40) { // Big arrays, pseudomedian of 9
-          var s = len / 8
+            var s = len / 8
             l = med3(l, l + s, l + 2 * s)
             m = med3(m - s, m, m + s)
             n = med3(n - 2 * s, n - s, n)
@@ -253,7 +253,7 @@ object Sorting {
           var l = off
           var n = off + len - 1
           if (len > 40) { // Big arrays, pseudomedian of 9
-          var s = len / 8
+            var s = len / 8
             l = med3(l, l + s, l + 2 * s)
             m = med3(m - s, m, m + s)
             n = med3(n - 2 * s, n - s, n)
@@ -357,7 +357,7 @@ object Sorting {
           var l = off
           var n = off + len - 1
           if (len > 40) { // Big arrays, pseudomedian of 9
-          var s = len / 8
+            var s = len / 8
             l = med3(l, l + s, l + 2 * s)
             m = med3(m - s, m, m + s)
             n = med3(n - 2 * s, n - s, n)
@@ -465,7 +465,7 @@ object Sorting {
           var l = off
           var n = off + len - 1
           if (len > 40) { // Big arrays, pseudomedian of 9
-          var s = len / 8
+            var s = len / 8
             l = med3(l, l + s, l + 2 * s)
             m = med3(m - s, m, m + s)
             n = med3(n - 2 * s, n - s, n)

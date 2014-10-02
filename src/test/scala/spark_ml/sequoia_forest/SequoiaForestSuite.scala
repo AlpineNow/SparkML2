@@ -451,7 +451,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txData = Discretizer.transformFeaturesToUnsignedByteBinIds(testDataRDD, bins)
 
     // No bagging (100% sampling without replacement).
-    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
 
     // Train without local sub-tree training.
     val forest = SequoiaForestTrainer.train(
@@ -934,7 +934,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txData = Discretizer.transformFeaturesToUnsignedByteBinIds(testDataRDD, bins)
 
     // No bagging (100% sampling without replacement).
-    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
 
     // Train without local sub-tree training.
     val forest = SequoiaForestTrainer.train(
