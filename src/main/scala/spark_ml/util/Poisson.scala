@@ -18,12 +18,15 @@
 package spark_ml.util
 
 import scala.collection.mutable
+import scala.util.Random
 
 /**
  * Poisson sampler.
  * @param lambda The average count of the Poisson distribution.
+ * @param seed The random number generator seed.
  */
-case class Poisson(lambda: Double) {
+case class Poisson(lambda: Double, seed: Int) {
+  private val rng = new Random(seed)
   private val tolerance: Double = 0.00001
 
   private var pdf: Array[Double] = _
@@ -60,7 +63,7 @@ case class Poisson(lambda: Double) {
    * @return A sampled integer value.
    */
   def sample(): Int = {
-    val rnd = math.random
+    val rnd = rng.nextDouble()
     for (i <- 0 to cdf.length - 1) {
       if (rnd <= cdf(i)) {
         return i

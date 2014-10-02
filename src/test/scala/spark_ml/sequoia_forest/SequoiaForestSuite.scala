@@ -40,7 +40,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txData = Discretizer.transformFeaturesToUnsignedByteBinIds(testDataRDD, bins)
 
     // No bagging (100% sampling without replacement).
-    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
 
     // Train without local sub-tree training.
     val forest = SequoiaForestTrainer.train(
@@ -188,7 +188,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txData = Discretizer.transformFeaturesToUnsignedShortBinIds(testDataRDD, bins)
 
     // No bagging (100% sampling without replacement).
-    val inputRDD = Bagger.bagRDD[Short](txData, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val inputRDD = Bagger.bagRDD[Short](txData, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
 
     // Train without local sub-tree training.
     val forest = SequoiaForestTrainer.train(
@@ -265,7 +265,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txDataLocal = Discretizer.transformFeaturesToUnsignedByteBinIds(testDataRDD, bins).collect()
 
     // No bagging (100% sampling without replacement).
-    val baggedInput = Bagger.bagArray[Byte](txDataLocal, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val baggedInput = Bagger.bagArray[Byte](txDataLocal, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
     val inputLocal = baggedInput.map(row => (row, Array.fill[Int](1)(0)))
 
     // Train without local sub-tree training.
@@ -343,7 +343,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txDataLocal = Discretizer.transformFeaturesToUnsignedShortBinIds(testDataRDD, bins).collect()
 
     // No bagging (100% sampling without replacement).
-    val baggedInput = Bagger.bagArray[Short](txDataLocal, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val baggedInput = Bagger.bagArray[Short](txDataLocal, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
     val inputLocal = baggedInput.map(row => (row, Array.fill[Int](1)(0)))
 
     // Train without local sub-tree training.
@@ -421,7 +421,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txData = Discretizer.transformFeaturesToUnsignedByteBinIds(testDataRDD, bins)
 
     // No bagging (100% sampling without replacement).
-    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val inputRDD = Bagger.bagRDD[Byte](txData, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
 
     // Train without local sub-tree training.
     val forest = SequoiaForestTrainer.train(
@@ -555,7 +555,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txData = Discretizer.transformFeaturesToUnsignedShortBinIds(testDataRDD, bins)
 
     // No bagging (100% sampling without replacement).
-    val inputRDD = Bagger.bagRDD[Short](txData, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val inputRDD = Bagger.bagRDD[Short](txData, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
 
     // Train without local sub-tree training.
     val forest = SequoiaForestTrainer.train(
@@ -633,7 +633,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txDataLocal = Discretizer.transformFeaturesToUnsignedByteBinIds(testDataRDD, bins).collect()
 
     // No bagging (100% sampling without replacement).
-    val baggedInput = Bagger.bagArray[Byte](txDataLocal, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val baggedInput = Bagger.bagArray[Byte](txDataLocal, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
     val inputLocal = baggedInput.map(row => (row, Array.fill[Int](1)(0)))
 
     // Train without local sub-tree training.
@@ -712,7 +712,7 @@ class SequoiaForestSuite extends FunSuite with LocalSparkContext {
     val txDataLocal = Discretizer.transformFeaturesToUnsignedShortBinIds(testDataRDD, bins).collect()
 
     // No bagging (100% sampling without replacement).
-    val baggedInput = Bagger.bagArray[Short](txDataLocal, 1, SamplingType.SampleWithoutReplacement, 1.0)
+    val baggedInput = Bagger.bagArray[Short](txDataLocal, 1, SamplingType.SampleWithoutReplacement, 1.0, 0)
     val inputLocal = baggedInput.map(row => (row, Array.fill[Int](1)(0)))
 
     // Train without local sub-tree training.

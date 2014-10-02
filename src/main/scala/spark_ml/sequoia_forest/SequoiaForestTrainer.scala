@@ -107,13 +107,15 @@ object SequoiaForestTrainer {
 
     notifiee.newStatusMessage("Finished computing bins for each feature...")
 
+    val rng = new Random() // For generating seeds for the bagger.
+
     // Now transform data into bin IDs.
     val discretizedBaggedInput: DiscretizedData = maxBinCount match {
       case binCount if binCount <= 256 =>
         notifiee.newStatusMessage("Discretizing the input data features into unsigned Byte bin IDs...")
         val txData = Discretizer.transformFeaturesToUnsignedByteBinIds(input, featureBins)
         notifiee.newStatusMessage("Bagging the input data...")
-        val baggedInput = Bagger.bagRDD[Byte](txData, numTrees, samplingType, samplingRate)
+        val baggedInput = Bagger.bagRDD[Byte](txData, numTrees, samplingType, samplingRate, rng.nextInt())
         notifiee.newStatusMessage("Caching (and also materializing) the transformed data...")
         baggedInput.persist(storageLevel)
         notifiee.newStatusMessage("Finished caching the transformed data...")
@@ -123,7 +125,7 @@ object SequoiaForestTrainer {
         notifiee.newStatusMessage("Discretizing the input data features into unsigned Short bin IDs...")
         val txData = Discretizer.transformFeaturesToUnsignedShortBinIds(input, featureBins)
         notifiee.newStatusMessage("Bagging the input data...")
-        val baggedInput = Bagger.bagRDD[Short](txData, numTrees, samplingType, samplingRate)
+        val baggedInput = Bagger.bagRDD[Short](txData, numTrees, samplingType, samplingRate, rng.nextInt())
         notifiee.newStatusMessage("Caching (and also materializing) the transformed data...")
         baggedInput.persist(storageLevel)
         notifiee.newStatusMessage("Finished caching the transformed data...")
