@@ -79,6 +79,8 @@ object SequoiaForestTrainer {
     notifiee.newStatusMessage("The maximum number of bins in any feature is " + maxBinCount)
     notifiee.newStatusMessage("Computing bins for each feature...")
 
+    val rng = new Random() // For generating seeds for the bagger.
+
     val (maxLabelValue: Double, featureBins: Array[Bins]) = discretizationType match {
       case DiscretizationType.EqualWidth => EqualWidthDiscretizer.discretizeFeatures(
         input,
@@ -95,7 +97,8 @@ object SequoiaForestTrainer {
         Map[String, String](
           StringConstants.NumBins_Numeric -> maxNumNumericBins.toString,
           StringConstants.SubSampleCount_Numeric -> "10000", // TODO: Using 10000 samples to find numeric bins but should make this configurable.
-          StringConstants.MaxCardinality_Categoric -> maxNumCategoricalBins.toString))
+          StringConstants.MaxCardinality_Categoric -> maxNumCategoricalBins.toString,
+          StringConstants.RandomSeed -> rng.nextInt().toString))
 
       case _ => throw new UnsupportedOperationException("Currently, only equal-width or equal-frequency discretizations are supported.")
     }
@@ -106,8 +109,6 @@ object SequoiaForestTrainer {
     }
 
     notifiee.newStatusMessage("Finished computing bins for each feature...")
-
-    val rng = new Random() // For generating seeds for the bagger.
 
     // Now transform data into bin IDs.
     val discretizedBaggedInput: DiscretizedData = maxBinCount match {

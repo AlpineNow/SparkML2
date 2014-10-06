@@ -34,7 +34,8 @@ object EqualFrequencyDiscretizer extends Discretizer {
       maxNumericFeatureSamples: Int,
       categoricalFeatureIndices: Set[Int],
       maxCategoricalCardinality: Int,
-      labelIsCategorical: Boolean) {
+      labelIsCategorical: Boolean,
+      seed: Int) {
     var maxLabelValue: Double = Double.NegativeInfinity
     val numericSamples = mutable.Map[Int, Array[Double]]()
     val categoricalMaxVals = mutable.Map[Int, Int]()
@@ -56,7 +57,7 @@ object EqualFrequencyDiscretizer extends Discretizer {
     }
 
     // We don't need to serialize this.
-    @transient private var randGen: Random = new Random()
+    @transient private var randGen: Random = new Random(seed)
 
     /**
      * Add a sample of features.
@@ -121,7 +122,7 @@ object EqualFrequencyDiscretizer extends Discretizer {
      * @return This
      */
     def mergeInPlace(another: PartitionSample): this.type = {
-      val randGen = new Random()
+      val randGen = new Random(seed + another.seed)
       val mySampleCount = numericSampleCount
       val theirSampleCount = another.numericSampleCount
       val totalSampleCount = mySampleCount + theirSampleCount
@@ -174,12 +175,15 @@ object EqualFrequencyDiscretizer extends Discretizer {
     // Categorical feature options.
     val maxCardinality = config(StringConstants.MaxCardinality_Categoric).toInt
 
+    // Seed for the random number generator.
+    val seed = config.getOrElse(StringConstants.RandomSeed, "1").toInt
+
     val numFeatures = input.first()._2.length
 
     // We will first find unique value counts for each numeric feature.
     // This will fail if the cardinality is too large for a numeric feature or a categorical feature.
-    val overallSample = input.mapPartitions(rows => {
-      val partitionSample = PartitionSample(numFeatures, subSampleCount, categoricalFeatureIndices, maxCardinality, labelIsCategorical)
+    val overallSample = input.mapPartitionsWithIndex((index, rows) => {
+      val partitionSample = PartitionSample(numFeatures, subSampleCount, categoricalFeatureIndices, maxCardinality, labelIsCategorical, seed + index)
       while (rows.hasNext) {
         val row = rows.next()
         partitionSample.addSample(row)

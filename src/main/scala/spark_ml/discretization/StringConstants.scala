@@ -24,4 +24,5 @@ object StringConstants {
   val NumBins_Numeric = "NumBins_Numeric"
   val SubSampleCount_Numeric = "SubSampleCount_Numeric"
   val MaxCardinality_Categoric = "MaxCardinality_Categoric"
+  val RandomSeed = "RandomSeed"
 }
