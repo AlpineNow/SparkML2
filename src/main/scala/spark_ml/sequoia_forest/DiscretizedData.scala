@@ -45,6 +45,9 @@ trait DiscretizedData {
    */
   def getSparkContext: SparkContext = null
 
+  def setCheckpointDir(dir: String): Unit = {}
+  def setCheckpointInterval(interval: Int): Unit = {}
+
   /**
    * Initialize node IDs of rows to zeroes.
    * @param numTrees Number of trees that we have.
@@ -202,12 +205,25 @@ class UnsignedShortFeatureHandler extends FeatureHandler[Short] {
  */
 class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T], Array[Byte])])(featureHandler: FeatureHandler[T]) extends DiscretizedData {
   var nodeIdRDD: RDD[Array[Int]] = null
+  var checkpointDir: String = null
+  var checkpointInterval: Int = 10
+  var nodeIdRDDUpdateCount: Int = 0
+
   override def isLocal: Boolean = false
 
   /**
    * @return SparkContext of the RDD.
    */
   override def getSparkContext: SparkContext = data.sparkContext
+
+  override def setCheckpointDir(dir: String): Unit = {
+    checkpointDir = dir
+    data.sparkContext.setCheckpointDir(checkpointDir)
+  }
+
+  override def setCheckpointInterval(interval: Int): Unit = {
+    checkpointInterval = interval
+  }
 
   /**
    * Initialize the node IDs for training rows.
@@ -395,7 +411,7 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
     val featureHandlerLocal = featureHandler.cloneMyself // To avoid serializing the entire DiscretizedData object.
 
     // Now, update all rows' node Ids.
-    nodeIdRDD = data.zip(nodeIdRDD).map(row => {
+    val newNodeIdRDD = data.zip(nodeIdRDD).map(row => {
       val nodeIds = row._2
       cfor(0)(_ < numTrees, _ + 1)(
         treeId => {
@@ -420,8 +436,18 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
       nodeIds
     })
 
-    // To improve performance.
-    // nodeIdRDD.checkpoint()
+    if (checkpointDir != null) {
+      nodeIdRDDUpdateCount += 1
+      if (nodeIdRDDUpdateCount >= checkpointInterval) {
+        // To improve performance.
+        newNodeIdRDD.checkpoint()
+        nodeIdRDD.unpersist()
+        newNodeIdRDD.persist(data.getStorageLevel)
+        nodeIdRDDUpdateCount = 0
+      }
+    }
+
+    nodeIdRDD = newNodeIdRDD
   }
 }
 

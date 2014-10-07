@@ -35,12 +35,17 @@ case class ValidationOptions(
   validationPath: String = null,
   useLogLossForValidation: Boolean = false)
 
+case class FilePathOptions(
+  inputPath: String = null,
+  outputPath: String = null,
+  checkpointDir: String = null,
+  checkpointInterval: Int = 10)
+
 /**
  * Config object to be set by command line arguments.
  */
 case class RunnerConfig(
-  inputPath: String = null,
-  outputPath: String = null,
+  filePathOptions: FilePathOptions = FilePathOptions(),
   numTrees: Int = 10,
   numPartitions: Int = -1,
   delimiter: String = "\t",
@@ -75,11 +80,17 @@ object SequoiaForestRunner {
       opt[String]("inputPath")
         .text("Path to delimited text file(s) (e.g. csv/tsv) to be used as a training input. All the used fields should be numeric (ignored columns can be anything). Categorical fields should be enumerated from 0 to K-1 where K is the cardinality of the field.")
         .required()
-        .action((x, c) => c.copy(inputPath = x))
+        .action((x, c) => c.copy(filePathOptions = c.filePathOptions.copy(inputPath = x)))
       opt[String]("outputPath")
         .text("Output path (directory) where the trained trees will be stored as binary files.")
         .required()
-        .action((x, c) => c.copy(outputPath = x))
+        .action((x, c) => c.copy(filePathOptions = c.filePathOptions.copy(outputPath = x)))
+      opt[String]("checkpointDir")
+        .text("Checkpoint directory for an intermediate RDD.")
+        .action((x, c) => c.copy(filePathOptions = c.filePathOptions.copy(checkpointDir = x)))
+      opt[Int]("checkpointInterval")
+        .text("Checkpoint interval for an imtermediate RDD.")
+        .action((x, c) => c.copy(filePathOptions = c.filePathOptions.copy(checkpointInterval = x)))
       opt[Int]("numTrees")
         .text("Number of trees to train.")
         .required()
@@ -209,7 +220,7 @@ object SequoiaForestRunner {
         (label, features)
       }
 
-      val trainingRDD = sc.textFile(config.inputPath).map(lineParser)
+      val trainingRDD = sc.textFile(config.filePathOptions.inputPath).map(lineParser)
 
       // Find the total number of columns in the raw data.
       val numColumns = trainingRDD.first()._2.length + 1 + indicesToIgnore.size
@@ -241,7 +252,7 @@ object SequoiaForestRunner {
         treeType = if (config.forestType == ForestType.InfoGain) TreeType.Classification_InfoGain else TreeType.Regression_Variance,
         input = trainingRDD.repartition(config.numPartitions),
         numTrees = config.numTrees,
-        outputStorage = new HDFSForestStorage(trainingRDD.sparkContext.hadoopConfiguration, config.outputPath),
+        outputStorage = new HDFSForestStorage(trainingRDD.sparkContext.hadoopConfiguration, config.filePathOptions.outputPath),
         validationData = validationData,
         categoricalFeatureIndices = categoricalFeatureIndices,
         notifiee = notifiee,
@@ -256,7 +267,9 @@ object SequoiaForestRunner {
         numNodesPerIteration = config.numRowFiltersPerIter,
         localTrainThreshold = config.subTreeThreshold,
         numSubTreesPerIteration = config.numSubTreesPerIter,
-        useLogLossForValidation = config.validationOptions.useLogLossForValidation)
+        useLogLossForValidation = config.validationOptions.useLogLossForValidation,
+        checkpointDir = config.filePathOptions.checkpointDir,
+        checkpointInterval = config.filePathOptions.checkpointInterval)
     } catch {
       case e: Exception => println("Exception:" + e.toString)
     } finally {

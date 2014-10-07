@@ -68,6 +68,8 @@ object SequoiaForestTrainer {
    * @param storageLevel Spark persistence level (whether data are cached to memory, local-disk or both). Defaults to MEMORY_AND_DISK.
    * @param imputationType How to handle missing values.
    * @param useLogLossForValidation Whether to use log loss for validation (only for binary classification).
+   * @param checkpointDir Checkpoint dir for intermediate node Id RDDs.
+   * @param checkpointInterval How often to perform checkpointing when node Id RDDs get updated.
    * @return A trained sequoia forest object if there's one in memory. Otherwise, the trees would be stored in the output path only and this would return None.
    */
   def discretizeAndTrain(
@@ -91,7 +93,9 @@ object SequoiaForestTrainer {
     numSubTreesPerIteration: Int,
     storageLevel: StorageLevel = StorageLevel.MEMORY_AND_DISK,
     imputationType: ImputationType.ImputationType = ImputationType.SplitOnMissing,
-    useLogLossForValidation: Boolean = false): Option[SequoiaForest] = {
+    useLogLossForValidation: Boolean = false,
+    checkpointDir: String = null,
+    checkpointInterval: Int = 10): Option[SequoiaForest] = {
 
     val maxBinCount = math.max(maxNumNumericBins, maxNumCategoricalBins)
     notifiee.newStatusMessage("The maximum number of bins in any feature is " + maxBinCount)
@@ -152,6 +156,9 @@ object SequoiaForestTrainer {
 
       case _ => throw new UnsupportedOperationException("Number of bins greater than 65536 is not supported.")
     }
+
+    discretizedBaggedInput.setCheckpointDir(checkpointDir)
+    discretizedBaggedInput.setCheckpointInterval(checkpointInterval)
 
     notifiee.newStatusMessage("Finished transforming the input data into propert training data...")
 
