@@ -101,7 +101,6 @@ object SequoiaForestRunner {
         .action((x, c) => c.copy(numTrees = x))
       opt[Int]("numPartitions")
         .text("Number of partitions to divide the data into. Recommended be the same as the number of executors submitted through spark-submit.")
-        .required()
         .action((x, c) => c.copy(numPartitions = x))
       opt[String]("validationPath")
         .text("Optional path to delimited text file(s) (e.g. csv/tsv) to be used for validation. All the fields should be numeric (ignored columns can be anything). Categorical fields should be enumerated from 0 to K-1 where K is the cardinality of the field.")
@@ -250,11 +249,19 @@ object SequoiaForestRunner {
       }
 
       val notifiee = new ConsoleNotifiee
-      notifiee.newStatusMessage("Repartitioning the input across " + config.numPartitions + " executors.")
+
+      val inputRDD = if (config.numPartitions > 1) {
+        notifiee.newStatusMessage("Repartitioning the input across " + config.numPartitions + " partitions.")
+        val repartitionedRDD = trainingRDD.repartition(config.numPartitions)
+        repartitionedRDD.checkpoint() // Repartitioned RDD has to be checkpointed. Otherwise, this won't be fault-tolerant because repartition is not deterministic in row orders.
+        repartitionedRDD
+      } else {
+        trainingRDD
+      }
 
       SequoiaForestTrainer.discretizeAndTrain(
         treeType = if (config.forestType == ForestType.InfoGain) TreeType.Classification_InfoGain else TreeType.Regression_Variance,
-        input = trainingRDD.repartition(config.numPartitions),
+        input = inputRDD,
         numTrees = config.numTrees,
         outputStorage = new HDFSForestStorage(trainingRDD.sparkContext.hadoopConfiguration, config.filePathOptions.outputPath),
         validationData = validationData,
