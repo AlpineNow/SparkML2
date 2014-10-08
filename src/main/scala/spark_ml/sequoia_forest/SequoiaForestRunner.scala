@@ -253,6 +253,7 @@ object SequoiaForestRunner {
       val inputRDD = if (config.numPartitions > 1) {
         notifiee.newStatusMessage("Repartitioning the input across " + config.numPartitions + " partitions.")
         val repartitionedRDD = trainingRDD.repartition(config.numPartitions)
+        repartitionedRDD.sparkContext.setCheckpointDir(config.filePathOptions.checkpointDir)
         repartitionedRDD.checkpoint() // Repartitioned RDD has to be checkpointed. Otherwise, this won't be fault-tolerant because repartition is not deterministic in row orders.
         repartitionedRDD
       } else {
