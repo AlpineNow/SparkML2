@@ -70,6 +70,7 @@ object SequoiaForestTrainer {
    * @param useLogLossForValidation Whether to use log loss for validation (only for binary classification).
    * @param checkpointDir Checkpoint dir for intermediate node Id RDDs.
    * @param checkpointInterval How often to perform checkpointing when node Id RDDs get updated.
+   * @param distributedNodeSplits Whether to perform distributed node splits.
    * @return A trained sequoia forest object if there's one in memory. Otherwise, the trees would be stored in the output path only and this would return None.
    */
   def discretizeAndTrain(
@@ -95,7 +96,8 @@ object SequoiaForestTrainer {
     imputationType: ImputationType.ImputationType = ImputationType.SplitOnMissing,
     useLogLossForValidation: Boolean = false,
     checkpointDir: String = null,
-    checkpointInterval: Int = 10): Option[SequoiaForest] = {
+    checkpointInterval: Int = 10,
+    distributedNodeSplits: Boolean = false): Option[SequoiaForest] = {
 
     val maxBinCount = math.max(maxNumNumericBins, maxNumCategoricalBins)
     notifiee.newStatusMessage("The maximum number of bins in any feature is " + maxBinCount)
@@ -256,8 +258,8 @@ object SequoiaForestTrainer {
         storeModelInMemory = storeModelInMemory,
         outputStorage = outputStorage,
         numClasses = numClasses,
-        imputationType = imputationType
-      ),
+        imputationType = imputationType,
+        distributedNodeSplits = distributedNodeSplits),
       notifiee,
       validationData,
       useLogLossForValidation)
@@ -344,26 +346,44 @@ object SequoiaForestTrainer {
       // Take the node splits from the queue and schedule them to be processed during this iteration.
       val rowFilterLookup = scheduledRowFilters.popRowFilters(options.numNodesPerIteration)
 
-      notifiee.newStatusMessage("Aggregating statistics. The number of row filters is " + rowFilterLookup.nodeSplitCount)
+      val trainedNodes = if (options.distributedNodeSplits) {
+        notifiee.newStatusMessage("Performing distributed node splits. The number of node splits to perform is " + rowFilterLookup.nodeSplitCount)
 
-      // Aggregate statistics for scheduled nodes.
-      val aggregationT0 = System.currentTimeMillis()
-      val aggregatedStats: AggregatedStatistics = input.applyRowFiltersAndAggregateStatistics(rowFilterLookup, treeSeeds, numBinsPerFeature, options)
-      val aggregationDuration = System.currentTimeMillis() - aggregationT0
+        val t0 = System.currentTimeMillis()
+        val r = input.performDistributedNodeSplits(
+          rowFilterLookup = rowFilterLookup,
+          treeSeeds = treeSeeds,
+          numBinsPerFeature = numBinsPerFeature,
+          options = options,
+          featureBins = featureBins,
+          nextNodeIdsPerTree = nextNodeIdsPerTree,
+          nodeDepths = nodeDepths)
+        val duration = System.currentTimeMillis() - t0
 
-      notifiee.newStatusMessage("Finished statistics aggregation. Time it took (seconds) : " + aggregationDuration.toDouble / 1000.0)
+        notifiee.newStatusMessage("Finished distributed node splits. Time it took (seconds) : " + duration.toDouble / 1000.0)
+        r
+      } else {
+        notifiee.newStatusMessage("Aggregating statistics. The number of row filters is " + rowFilterLookup.nodeSplitCount)
+
+        // Aggregate statistics for scheduled nodes.
+        val aggregationT0 = System.currentTimeMillis()
+        val aggregatedStats: AggregatedStatistics = input.applyRowFiltersAndAggregateStatistics(rowFilterLookup, treeSeeds, numBinsPerFeature, options)
+        val aggregationDuration = System.currentTimeMillis() - aggregationT0
+
+        notifiee.newStatusMessage("Finished statistics aggregation. Time it took (seconds) : " + aggregationDuration.toDouble / 1000.0)
+
+        // Train and find node splits based on the aggregated statistics.
+        aggregatedStats.computeNodePredictionsAndSplits(
+          featureBins,
+          nextNodeIdsPerTree,
+          nodeDepths,
+          options,
+          treeSeeds)
+      }
 
       // Set up row filters to used to find rows that can be shuffled to perform local sub-tree training.
       // Only to be used for RDD data sources.
       val subTreeTrainingRowFilters = if (input.isLocal) null else ScheduledRowFilters(numTrees)
-
-      // Train and find node splits based on the aggregated statistics.
-      val trainedNodes = aggregatedStats.computeNodePredictionsAndSplits(
-        featureBins,
-        nextNodeIdsPerTree,
-        nodeDepths,
-        options,
-        randGen)
 
       // Create tree nodes and process splits if they exist.
       while (trainedNodes.hasNext) {
@@ -403,7 +423,7 @@ object SequoiaForestTrainer {
         notifiee.newStatusMessage("Training " + subTreeLookup.subTreeCount + " sub trees.")
 
         val subTreeT0 = System.currentTimeMillis()
-        val subTrees = input.trainSubTreesLocally(subTreeLookup, featureBins, nodeDepths, options)
+        val subTrees = input.trainSubTreesLocally(subTreeLookup, featureBins, nodeDepths, options, treeSeeds)
         val subTreeDuration = System.currentTimeMillis() - subTreeT0
 
         notifiee.newStatusMessage("Finished training sub trees. Time it took (seconds) : " + subTreeDuration.toDouble / 1000.0)
@@ -652,6 +672,7 @@ object SequoiaForestTrainer {
  * @param outputStorage Where to store the output model.
  * @param numClasses Number of classes, if this is a classification model (required for classification).
  * @param imputationType Imputation type (how to handle missing feature values).
+ * @param distributedNodeSplits Whether to perform node splits in a distributed fashion.
  */
 case class SequoiaForestOptions(
   numTrees: Int,
@@ -664,8 +685,9 @@ case class SequoiaForestOptions(
   numSubTreesPerIteration: Int,
   storeModelInMemory: Boolean,
   outputStorage: ForestStorage,
-  numClasses: Option[Int],
-  imputationType: ImputationType.ImputationType) // Only for classification.
+  numClasses: Option[Int], // Only for classifications.
+  imputationType: ImputationType.ImputationType,
+  distributedNodeSplits: Boolean)
 
 /**
  * This is used to filter training rows to matching Node Ids.

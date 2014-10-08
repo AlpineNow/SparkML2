@@ -52,7 +52,9 @@ case class TrainedNodeInfo(
  * @param numElemsPerBin The number of statistics per bin (e.g. 3 for Variance, numClasses for InfoGain, etc.).
  */
 abstract class BinStatisticsArrayBuilder(val numElemsPerBin: Int) {
-  protected val binStatsBuilder = new mutable.ArrayBuilder.ofDouble
+  protected var binStatsBuilder = new mutable.ArrayBuilder.ofDouble
+
+  def reset(): Unit = binStatsBuilder = new mutable.ArrayBuilder.ofDouble
 
   /**
    * Add numBins to the builder, and this will return the number of array elements added afterward.
@@ -558,7 +560,7 @@ abstract class AggregatedStatistics(
    * @param nextNodeIdsPerTree The node Ids to assign to new child nodes from splits.
    * @param nodeDepths The depths of the currently being-trained nodes.
    * @param options Options to refer to.
-   * @param randGen Random number generator to use in case rand numbers are needed. Useful for testing.
+   * @param treeSeeds Seeds for random number generators Useful for testing.
    * @return An iterator of trained node info objects. The trainer will use this to build trees.
    */
   def computeNodePredictionsAndSplits(
@@ -566,7 +568,7 @@ abstract class AggregatedStatistics(
     nextNodeIdsPerTree: Array[Int],
     nodeDepths: Array[mutable.Map[Int, Int]],
     options: SequoiaForestOptions,
-    randGen: scala.util.Random): Iterator[TrainedNodeInfo] = {
+    treeSeeds: Array[Int]): Iterator[TrainedNodeInfo] = {
     val output = new mutable.ArrayBuffer[TrainedNodeInfo]()
     val depthLimit = options.maxDepth match {
       case x if x == -1 => Int.MaxValue
@@ -613,7 +615,7 @@ abstract class AggregatedStatistics(
                         isFeatureCategorical = featureBins(featId).isInstanceOf[CategoricalBins],
                         missingValueBinId = featureBins(featId).getMissingValueBinIdx,
                         imputationType = options.imputationType,
-                        randGen = randGen)
+                        randGen = new Random(treeSeeds(treeId) + nodeId))
 
                       if (splitSummary.splitWeights != null &&
                         (bestSplitImpurity == None || splitSummary.splitImpurity < bestSplitImpurity.get)) {
@@ -739,6 +741,334 @@ abstract class AggregatedStatistics(
                 splitImpurity = bestSplitImpurity,
                 nodeSplit = nodeSplit
               )
+            }
+          }
+        )
+      }
+    )
+
+    output.toIterator
+  }
+}
+
+case class NodeStatistics(
+    treeId: Int,
+    nodeId: Int,
+    featureOffsets: Array[Int],
+    featureIds: Array[Int],
+    binStatsArray: BinStatisticsArray) {
+  def computeNodePredictionAndSplit(
+    categoricalFeatureFlags: Array[Boolean],
+    featureMissingValueBinIds: Array[Int],
+    numBinsPerFeature: Array[Int],
+    seed: Int,
+    minSplitSize: Long,
+    imputationType: ImputationType.ImputationType): TrainedNodeInfo = {
+    val randGen = new scala.util.Random(seed)
+
+    assert(featureOffsets(0) == 0) // TODO: Remove this.
+    val nodeSummary = binStatsArray.getNodeSummary(featureOffsets(0), numBinsPerFeature(featureIds(0)))
+
+    var bestSplitImpurity: Option[Double] = None
+    var bestSplitFeatId: Option[Int] = None
+    var bestSplitGroups: Option[Array[List[Int]]] = None
+    var bestSplitGroupWeights: Option[Array[Double]] = None
+
+    if (nodeSummary.impurity > 0.0 && nodeSummary.weightSum >= minSplitSize) {
+      cfor(0)(_ < featureOffsets.length, _ + 1)(
+        featIdx => {
+          val featId = featureIds(featIdx)
+          val numBins = numBinsPerFeature(featId)
+          val binOffset = featureOffsets(featIdx)
+
+          val splitSummary = binStatsArray.computeSplit(
+            offset = binOffset,
+            numBins = numBins,
+            summaryStatsArray = nodeSummary.summaryStatistics,
+            weightSum = nodeSummary.weightSum,
+            isFeatureCategorical = categoricalFeatureFlags(featId),
+            missingValueBinId = featureMissingValueBinIds(featId),
+            imputationType = imputationType,
+            randGen = randGen)
+
+          if (splitSummary.splitWeights != null &&
+            (bestSplitImpurity == None || splitSummary.splitImpurity < bestSplitImpurity.get)) {
+            bestSplitImpurity = Some(splitSummary.splitImpurity)
+            bestSplitFeatId = Some(featId)
+            bestSplitGroups = Some(splitSummary.splitGroups)
+            bestSplitGroupWeights = Some(splitSummary.splitWeights)
+          }
+        }
+      )
+    }
+
+    // Now, let's see if we have a good enough split.
+    var nodeSplit: Option[NodeSplitOnBinId] = None
+    if (bestSplitFeatId != None && bestSplitImpurity.get < nodeSummary.impurity) {
+      val missingValueBinId = featureMissingValueBinIds(bestSplitFeatId.get)
+
+      // We have a good enough split.
+      // Two different ways to do this based on feature type.
+      if (categoricalFeatureFlags(bestSplitFeatId.get)) { // If this is a categorical feature.
+        val binIdToNodeIdMap = mutable.Map[Int, Int]()
+        val nodeWeights = mutable.Map[Int, Double]()
+
+        if (bestSplitGroupWeights.get(0) > 0.0) {
+          // Left child processing if it contains some elements.
+          val leftChildNodeId = 0 // This will get adjusted by the driver.
+          bestSplitGroups.get(0).foreach(binId => binIdToNodeIdMap.put(binId, leftChildNodeId))
+          nodeWeights.put(leftChildNodeId, bestSplitGroupWeights.get(0))
+        }
+
+        if (bestSplitGroupWeights.get(1) > 0.0) {
+          // Right child processing.
+          val rightChildNodeId = 1 // This will get adjusted by the driver.
+          bestSplitGroups.get(1).foreach(binId => binIdToNodeIdMap.put(binId, rightChildNodeId))
+          nodeWeights.put(rightChildNodeId, bestSplitGroupWeights.get(1))
+        }
+
+        // See if there's a missing value group.
+        if (missingValueBinId != -1) {
+          if (bestSplitGroupWeights.get.length == 3 && bestSplitGroupWeights.get(2) > 0.0) {
+            val nanChildNodeId = 2 // This will get adjusted by the driver.
+            binIdToNodeIdMap.put(missingValueBinId, nanChildNodeId)
+            nodeWeights.put(nanChildNodeId, bestSplitGroupWeights.get(2))
+          }
+        }
+
+        nodeSplit = Some(CategoricalSplitOnBinId(
+          parentNodeId = nodeId,
+          featureId = bestSplitFeatId.get,
+          binIdToNodeIdMap = binIdToNodeIdMap,
+          nodeWeights = nodeWeights))
+      } else { // If this is a numerical feature.
+        // If either side has 0 weight, we'll unite it into a single right side.
+        var splitBinId = bestSplitGroups.get(0).head
+        var leftChildNodeId = -1
+        var leftChildNodeWeight = bestSplitGroupWeights.get(0)
+        var rightChildNodeId = -1
+        var rightChildNodeWeight = bestSplitGroupWeights.get(1)
+        if (leftChildNodeWeight == 0.0 ||
+          rightChildNodeWeight == 0.0) {
+          splitBinId = 0
+          rightChildNodeWeight = math.max(leftChildNodeWeight, rightChildNodeWeight)
+          leftChildNodeWeight = 0.0
+
+          rightChildNodeId = 1 // This will get adjusted by the driver.
+        } else {
+          leftChildNodeId = 0 // This will get adjusted by the driver.
+          rightChildNodeId = 1 // This will get adjusted by the driver.
+        }
+
+        var nanNodeId = -1
+        var nanWeight = 0.0
+        // See if there's a missing value group.
+        if (missingValueBinId != -1) {
+          if (bestSplitGroupWeights.get.length == 3 && bestSplitGroupWeights.get(2) > 0.0) {
+            val nanChildNodeId = 2 // This will get adjusted by the driver.
+            val nanChildNodeWeight = bestSplitGroupWeights.get(2)
+
+            nanNodeId = nanChildNodeId
+            nanWeight = nanChildNodeWeight
+          }
+        }
+
+        nodeSplit = Some(NumericSplitOnBinId(
+          parentNodeId = nodeId,
+          featureId = bestSplitFeatId.get,
+          splitBinId = splitBinId,
+          leftId = leftChildNodeId,
+          rightId = rightChildNodeId,
+          leftWeight = leftChildNodeWeight,
+          rightWeight = rightChildNodeWeight,
+          leftSubTreeHash = -1,
+          rightSubTreeHash = -1,
+          nanBinId = missingValueBinId,
+          nanNodeId = nanNodeId,
+          nanWeight = nanWeight,
+          nanSubTreeHash = -1))
+      }
+    }
+
+    TrainedNodeInfo(
+      treeId = treeId,
+      nodeId = nodeId,
+      prediction = nodeSummary.prediction,
+      depth = -1, // This will get adjusted by the driver.
+      weight = nodeSummary.weightSum,
+      impurity = nodeSummary.impurity,
+      splitImpurity = bestSplitImpurity,
+      nodeSplit = nodeSplit)
+  }
+}
+
+abstract class AggregatedStatistics2(
+    @transient private val nodeSplitLookup: ScheduledNodeSplitLookup,
+    @transient private var binStatsArrayBuilder: BinStatisticsArrayBuilder,
+    numBinsPerFeature: Array[Int],
+    treeSeeds: Array[Int],
+    mtry: Int) {
+  val numTrees = nodeSplitLookup.numTrees
+  val numFeatures = numBinsPerFeature.length
+  val numSelectedFeaturesPerNode = math.min(mtry, numFeatures)
+
+  private[spark_ml] val startNodeIds = Array.fill[Int](numTrees)(0)
+
+  private[spark_ml] val offsetLookup = new Array[Array[Array[Int]]](numTrees)
+
+  private[spark_ml] val selectedFeaturesLookup = new Array[Array[Array[Int]]](numTrees)
+
+  val binStatsArrays = new Array[Array[BinStatisticsArray]](numTrees)
+
+  {
+    val offsetLookupBuilder = Array.fill[mutable.ArrayBuilder[Array[Int]]](numTrees)(mutable.ArrayBuilder.make[Array[Int]]())
+
+    val selectedFeaturesLookupBuilder = Array.fill[mutable.ArrayBuilder[Array[Int]]](numTrees)(mutable.ArrayBuilder.make[Array[Int]]())
+
+    val binStatsArraysBuilder = Array.fill[mutable.ArrayBuilder[BinStatisticsArray]](numTrees)(mutable.ArrayBuilder.make[BinStatisticsArray]())
+
+    cfor(0)(_ < numTrees, _ + 1)(
+      treeId => {
+        val nodeSplits = nodeSplitLookup.nodeSplitTable(treeId)
+        var prevNodeId = 0
+        cfor(0)(_ < nodeSplits.length, _ + 1)(
+          nodeSplitIdx => {
+            val nodeSplit = nodeSplits(nodeSplitIdx)
+            if (nodeSplit != null) { // nodeSplit might be null. TODO: Fix this ugliness.
+              val childNodeIds = nodeSplit.getOrderedChildNodeIds // Get child node Ids ordered by the Id, to make sure that we process things in a breadth-first manner.
+              cfor(0)(_ < childNodeIds.length, _ + 1)(
+                childNodeIdx => {
+                  val childNodeId = childNodeIds(childNodeIdx)
+                  if (nodeSplit.getSubTreeHash(childNodeId) == -1) {
+                    var curOffset = 0
+                    // We add this node to statistics only if this node is not trained as a sub-tree.
+                    // It's indicated by the node's sub-tree-hash value.
+                    // -1 hash value means that it's not trained as a sub-tree.
+                    // TODO: Fix this ugliness.
+                    if (startNodeIds(treeId) == 0) {
+                      startNodeIds(treeId) = childNodeId
+                    }
+
+                    // Since we can skip certain nodes that are to be trained locally as sub-trees,
+                    // we might be skipping node Ids.
+                    var numSkips = childNodeId - prevNodeId - 1
+                    while (prevNodeId != 0 && numSkips > 0) {
+                      selectedFeaturesLookupBuilder(treeId) += Array[Int]()
+                      offsetLookupBuilder(treeId) += Array[Int]()
+                      binStatsArraysBuilder(treeId) += null
+                      numSkips -= 1
+                    }
+
+                    prevNodeId = childNodeId
+
+                    // Randomly choose features for this child node.
+                    val selectedFeatureIndices = RandomSet.nChooseK(numSelectedFeaturesPerNode, numFeatures, new Random(treeSeeds(treeId) + childNodeId))
+                    selectedFeaturesLookupBuilder(treeId) += selectedFeatureIndices
+
+                    val featureOffsets = Array.fill[Int](numSelectedFeaturesPerNode)(0)
+                    offsetLookupBuilder(treeId) += featureOffsets
+
+                    // Now add the bins per selected feature and mark the offsets.
+                    cfor(0)(_ < selectedFeatureIndices.length, _ + 1)(
+                      featIdx => {
+                        val featId = selectedFeatureIndices(featIdx)
+                        val numBins = numBinsPerFeature(featId)
+                        featureOffsets(featIdx) = curOffset
+                        curOffset += binStatsArrayBuilder.addBins(numBins)
+                      }
+                    )
+
+                    binStatsArraysBuilder(treeId) += binStatsArrayBuilder.createBinStatisticsArray
+                    binStatsArrayBuilder.reset()
+                  }
+                }
+              )
+            }
+          }
+        )
+      }
+    )
+
+    cfor(0)(_ < numTrees, _ + 1)(treeId => offsetLookup(treeId) = offsetLookupBuilder(treeId).result())
+    cfor(0)(_ < numTrees, _ + 1)(treeId => selectedFeaturesLookup(treeId) = selectedFeaturesLookupBuilder(treeId).result())
+    cfor(0)(_ < numTrees, _ + 1)(treeId => binStatsArrays(treeId) = binStatsArraysBuilder(treeId).result())
+
+    binStatsArrayBuilder = null
+  }
+
+  /**
+   * Add a sample for a tree's node.
+   * @param treeId The tree that we are adding this sample to.
+   * @param nodeId The node of the tree.
+   * @param sample The sample with unsigned bytes as features.
+   */
+  def addUnsignedByteSample(
+    treeId: Int,
+    nodeId: Int,
+    sample: (Double, Array[Byte], Array[Byte])): Unit = {
+    // Find the selected features.
+    val nodeIdx = nodeId - startNodeIds(treeId)
+    val selectedFeatures = selectedFeaturesLookup(treeId)(nodeIdx)
+    val label = sample._1
+    val sampleCount = sample._3(treeId).toInt
+
+    // Add the bin stats for all the selected features.
+    cfor(0)(_ < selectedFeatures.length, _ + 1)(
+      featIdx => {
+        val featId = selectedFeatures(featIdx)
+        val featBinId = Discretizer.readUnsignedByte(sample._2(featId))
+        val offset = offsetLookup(treeId)(nodeIdx)(featIdx)
+        binStatsArrays(treeId)(nodeIdx).add(offset, featBinId, label, sampleCount)
+      }
+    )
+  }
+
+  /**
+   * Add a sample for a tree's node.
+   * @param treeId The tree that we are adding this sample to.
+   * @param nodeId The node of the tree.
+   * @param sample The sample with unsigned shorts as features.
+   */
+  def addUnsignedShortSample(
+    treeId: Int,
+    nodeId: Int,
+    sample: (Double, Array[Short], Array[Byte])): Unit = {
+    // Find the selected features.
+    val nodeIdx = nodeId - startNodeIds(treeId)
+    val selectedFeatures = selectedFeaturesLookup(treeId)(nodeIdx)
+    val label = sample._1
+    val sampleCount = sample._3(treeId).toInt
+
+    // Add the bin stats for all the selected features.
+    cfor(0)(_ < selectedFeatures.length, _ + 1)(
+      featIdx => {
+        val featId = selectedFeatures(featIdx)
+        val featBinId = Discretizer.readUnsignedShort(sample._2(featId))
+        val offset = offsetLookup(treeId)(nodeIdx)(featIdx)
+        binStatsArrays(treeId)(nodeIdx).add(offset, featBinId, label, sampleCount)
+      }
+    )
+  }
+
+  def toNodeStatisticsIterator: Iterator[(Int, NodeStatistics)] = {
+    var nodeStatHash = 0
+    val output = new mutable.ArrayBuffer[(Int, NodeStatistics)]()
+
+    cfor(0)(_ < numTrees, _ + 1)(
+      treeId => {
+        cfor(0)(_ < offsetLookup(treeId).length, _ + 1)(
+          nodeIdx => {
+            if (offsetLookup(treeId)(nodeIdx).length > 0) {
+              val nodeId = startNodeIds(treeId) + nodeIdx
+              val nodeStats = NodeStatistics(
+                treeId = treeId,
+                nodeId = nodeId,
+                featureOffsets = offsetLookup(treeId)(nodeIdx),
+                featureIds = selectedFeaturesLookup(treeId)(nodeIdx),
+                binStatsArray = binStatsArrays(treeId)(nodeIdx))
+
+              output += ((nodeStatHash, nodeStats))
+              nodeStatHash += 1
             }
           }
         )

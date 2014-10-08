@@ -65,7 +65,8 @@ case class RunnerConfig(
   subTreeThreshold: Int = -1,
   numSubTreesPerIter: Int = -1,
   pauseDuration: Int = 0,
-  validationOptions: ValidationOptions = ValidationOptions())
+  validationOptions: ValidationOptions = ValidationOptions(),
+  distributedNodeSplits: Boolean = false)
 
 /**
  * Wraps around everything to provide a simple command line interface for running Sequoia Forest.
@@ -91,6 +92,9 @@ object SequoiaForestRunner {
       opt[Int]("checkpointInterval")
         .text("Checkpoint interval for an imtermediate RDD.")
         .action((x, c) => c.copy(filePathOptions = c.filePathOptions.copy(checkpointInterval = x)))
+      opt[Boolean]("distributedNodeSplits")
+        .text("Whether to perform distributed node splits.")
+        .action((x, c) => c.copy(distributedNodeSplits = x))
       opt[Int]("numTrees")
         .text("Number of trees to train.")
         .required()
@@ -269,7 +273,8 @@ object SequoiaForestRunner {
         numSubTreesPerIteration = config.numSubTreesPerIter,
         useLogLossForValidation = config.validationOptions.useLogLossForValidation,
         checkpointDir = config.filePathOptions.checkpointDir,
-        checkpointInterval = config.filePathOptions.checkpointInterval)
+        checkpointInterval = config.filePathOptions.checkpointInterval,
+        distributedNodeSplits = config.distributedNodeSplits)
     } catch {
       case e: Exception => println("Exception:" + e.toString)
     } finally {

@@ -333,8 +333,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
         numClasses = Some(numClasses),
-        imputationType = ImputationType.SplitOnMissing),
-      new scala.util.Random(17))
+        imputationType = ImputationType.SplitOnMissing,
+        distributedNodeSplits = false),
+      Array[Int](2, -23))
 
     assert(nodeDepths(0).size === 0)
     assert(nodeDepths(1).size === 4) // There should be 4 child nodes (due to all binary splits).
@@ -390,8 +391,8 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].featureId === 1)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 3)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 24)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 24)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 24)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 5)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 10)
@@ -558,8 +559,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
         numClasses = Some(numClasses),
-        imputationType = ImputationType.SplitOnMissing),
-      new scala.util.Random(17))
+        imputationType = ImputationType.SplitOnMissing,
+        distributedNodeSplits = false),
+      Array[Int](2, -23))
 
     assert(nodeDepths(0).size === 0)
     assert(nodeDepths(1).size === 4)
@@ -615,8 +617,8 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].featureId === 1)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap.size === 3)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(1) === 24)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 24)
-    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(3) === 23)
+    assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].binIdToNodeIdMap(5) === 24)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights.size === 2)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(23) === 5)
     assert(split6.nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId].nodeWeights(24) === 10)
@@ -783,8 +785,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
         numClasses = Some(numClasses),
-        imputationType = ImputationType.SplitOnMissing),
-      new scala.util.Random(17))
+        imputationType = ImputationType.SplitOnMissing,
+        distributedNodeSplits = false),
+      Array[Int](2, -23))
 
     assert(nodeDepths(0).size === 0)
     assert(nodeDepths(1).size === 4) // There should be 4 child nodes (due to all binary splits).
@@ -1023,8 +1026,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
         numClasses = Some(numClasses),
-        imputationType = ImputationType.SplitOnMissing),
-      new scala.util.Random(17))
+        imputationType = ImputationType.SplitOnMissing,
+        distributedNodeSplits = false),
+      Array[Int](2, -23))
 
     assert(nodeDepths(0).size === 0)
     assert(nodeDepths(1).size === 6) // There should be 6 child nodes (due to all binary splits and NaN bins).
@@ -1259,8 +1263,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
         numClasses = Some(numClasses),
-        imputationType = ImputationType.SplitOnMissing),
-      new scala.util.Random(17))
+        imputationType = ImputationType.SplitOnMissing,
+        distributedNodeSplits = false),
+      Array[Int](2, -23))
 
     assert(nodeDepths(0).size === 0)
     assert(nodeDepths(1).size === 4) // There should be 6 child nodes (due to all binary splits and NaN bins).
@@ -1542,8 +1547,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
         numClasses = None,
-        imputationType = ImputationType.SplitOnMissing),
-      new scala.util.Random(17))
+        imputationType = ImputationType.SplitOnMissing,
+        distributedNodeSplits = false),
+      Array[Int](2, -23))
 
     assert(nodeDepths(0).size === 0)
     assert(nodeDepths(1).size === 4)
@@ -1773,8 +1779,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
         numClasses = None,
-        imputationType = ImputationType.SplitOnMissing),
-      new scala.util.Random(17))
+        imputationType = ImputationType.SplitOnMissing,
+        distributedNodeSplits = false),
+      Array[Int](2, -23))
 
     assert(nodeDepths(0).size === 0)
     assert(nodeDepths(1).size === 4)
@@ -1888,7 +1895,6 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
       treeId += 1
     }
 
-    val mtry = 4
     val numBinsPerFeature = Array[Int](11, 12, 17, 13, 15, 9)
 
     val featureBins = new Array[Bins](6)
@@ -2020,8 +2026,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
         numClasses = None,
-        imputationType = ImputationType.SplitOnMissing),
-      new scala.util.Random(17))
+        imputationType = ImputationType.SplitOnMissing,
+        distributedNodeSplits = false),
+      Array[Int](2, -23))
 
     assert(nodeDepths(0).size === 0)
     assert(nodeDepths(1).size === 5) // There should be 6 child nodes (due to all binary splits and NaN bins).
@@ -2139,7 +2146,6 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
       treeId += 1
     }
 
-    val mtry = 4
     val numBinsPerFeature = Array[Int](11, 12, 17, 13, 15, 9)
 
     val featureBins = new Array[Bins](6)
@@ -2261,8 +2267,9 @@ class SequoiaForestComponentSuite extends FunSuite with LocalSparkContext {
         storeModelInMemory = true,
         outputStorage = new NullSinkForestStorage,
         numClasses = None,
-        imputationType = ImputationType.SplitOnMissing),
-      new scala.util.Random(17))
+        imputationType = ImputationType.SplitOnMissing,
+        distributedNodeSplits = false),
+      Array[Int](2, -23))
 
     assert(nodeDepths(0).size === 0)
     assert(nodeDepths(1).size === 4) // There should be 6 child nodes (due to all binary splits and NaN bins).

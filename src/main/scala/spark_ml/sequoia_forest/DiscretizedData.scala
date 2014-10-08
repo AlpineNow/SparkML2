@@ -21,8 +21,10 @@ import scala.collection.mutable
 
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import spark_ml.discretization.{ Bins, Discretizer }
+import spark_ml.discretization.{ CategoricalBins, Bins, Discretizer }
 import spire.implicits._
+
+import spark_ml.util.Sorting._
 
 /**
  * Various data types for Sequoia Forest - can be RDD or local array. The features must be discretized into unsigned Byte or Short.
@@ -61,13 +63,15 @@ trait DiscretizedData {
    * @param featureBins Feature bin definitions.
    * @param nodeDepths Currently being-trained nodes' depths.
    * @param options Forest training options.
+   * @param treeSeeds To generate a seed for the sub-tree (useful for testing).
    * @return An iterator of trained trees, the first element is the parent tree ID. Sub-trees will have IDs that match the child ID of the parent tree.
    */
   def trainSubTreesLocally(
     subTreeLookup: ScheduledNodeSplitLookup,
     featureBins: Array[Bins],
     nodeDepths: Array[mutable.Map[Int, Int]],
-    options: SequoiaForestOptions): Iterator[(Int, SequoiaTree)]
+    options: SequoiaForestOptions,
+    treeSeeds: Array[Int]): Iterator[(Int, SequoiaTree)]
 
   /**
    * Apply row filters on rows, and collect/aggregate bin statistics on matching rows and nodes.
@@ -83,6 +87,29 @@ trait DiscretizedData {
     treeSeeds: Array[Int],
     numBinsPerFeature: Array[Int],
     options: SequoiaForestOptions): AggregatedStatistics
+
+  /**
+   * Similar to applyRowFiltersAndAggregateStatistics.
+   * In addition to performing distributed statistics aggregations, this will also perform
+   * distributed node splits (node splits for different trees will be done by different machines),
+   * making it more efficient.
+   * @param rowFilterLookup A fast lookup for matching row filters for particular nodes.
+   * @param treeSeeds Random seeds to use per tree. This is used in selecting a random number of features per node.
+   * @param numBinsPerFeature Number of bins per feature. This is used to initialize the statistics object.
+   * @param options The options to be used in Sequoia Forest.
+   * @param featureBins Feature bin descriptions.
+   * @param nextNodeIdsPerTree Next node Ids to assign per tree.
+   * @param nodeDepths Depths of nodes that are currently being trained.
+   * @return An iterator of trained node info objects. The trainer will use this to build trees.
+   */
+  def performDistributedNodeSplits(
+    rowFilterLookup: ScheduledNodeSplitLookup,
+    treeSeeds: Array[Int],
+    numBinsPerFeature: Array[Int],
+    options: SequoiaForestOptions,
+    featureBins: Array[Bins],
+    nextNodeIdsPerTree: Array[Int],
+    nodeDepths: Array[mutable.Map[Int, Int]]): Iterator[TrainedNodeInfo]
 }
 
 /**
@@ -111,6 +138,8 @@ trait FeatureHandler[@specialized(Byte, Short) T] extends Serializable {
    * @param row The row whose label/feature values we want to add into the aggregated statistics.
    */
   def addRowToStats(stats: AggregatedStatistics, treeId: Int, nodeId: Int, row: (Double, Array[T], Array[Byte])): Unit
+
+  def addRowToStats(stats: AggregatedStatistics2, treeId: Int, nodeId: Int, row: (Double, Array[T], Array[Byte])): Unit
 
   /**
    * Use this to create a local discretized data object from a generic typed object.
@@ -147,6 +176,10 @@ class UnsignedByteFeatureHandler extends FeatureHandler[Byte] {
    * @param row The row whose label/feature values we want to add into the aggregated statistics.
    */
   def addRowToStats(stats: AggregatedStatistics, treeId: Int, nodeId: Int, row: (Double, Array[Byte], Array[Byte])): Unit = {
+    stats.addUnsignedByteSample(treeId, nodeId, row)
+  }
+
+  def addRowToStats(stats: AggregatedStatistics2, treeId: Int, nodeId: Int, row: (Double, Array[Byte], Array[Byte])): Unit = {
     stats.addUnsignedByteSample(treeId, nodeId, row)
   }
 
@@ -187,6 +220,10 @@ class UnsignedShortFeatureHandler extends FeatureHandler[Short] {
    * @param row The row whose label/feature values we want to add into the aggregated statistics.
    */
   def addRowToStats(stats: AggregatedStatistics, treeId: Int, nodeId: Int, row: (Double, Array[Short], Array[Byte])): Unit = {
+    stats.addUnsignedShortSample(treeId, nodeId, row)
+  }
+
+  def addRowToStats(stats: AggregatedStatistics2, treeId: Int, nodeId: Int, row: (Double, Array[Short], Array[Byte])): Unit = {
     stats.addUnsignedShortSample(treeId, nodeId, row)
   }
 
@@ -240,13 +277,15 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
    * @param featureBins Feature bin definitions.
    * @param nodeDepths Currently being-trained nodes' depths.
    * @param options Forest training options.
+   * @param treeSeeds To generate a seed for the sub-tree (useful for testing).
    * @return An iterator of trained trees, the first element is the parent tree ID. Sub-trees will have IDs that match the child ID of the parent tree.
    */
   override def trainSubTreesLocally(
     subTreeLookup: ScheduledNodeSplitLookup,
     featureBins: Array[Bins],
     nodeDepths: Array[mutable.Map[Int, Int]],
-    options: SequoiaForestOptions): Iterator[(Int, SequoiaTree)] = {
+    options: SequoiaForestOptions,
+    treeSeeds: Array[Int]): Iterator[(Int, SequoiaTree)] = {
     val featureHandlerLocal = featureHandler.cloneMyself // To avoid serializing the entire DiscretizedData object.
     val numTrees = options.numTrees
     val treeType = options.treeType
@@ -319,9 +358,12 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
           storeModelInMemory = true,
           outputStorage = new NullSinkForestStorage,
           numClasses = numClasses,
-          imputationType = imputationType),
+          imputationType = imputationType,
+          distributedNodeSplits = false),
         new ConsoleNotifiee,
-        None)
+        None,
+        useLogLossForValidation = false,
+        randGen = new scala.util.Random(treeSeeds(parentTreeId) + nodeId))
 
       val tree = forest.trees(0)
       tree.treeId = nodeId
@@ -401,6 +443,233 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
   }
 
   /**
+   * Similar to applyRowFiltersAndAggregateStatistics.
+   * In addition to performing distributed statistics aggregations, this will also perform
+   * distributed node splits (node splits for different trees will be done by different machines),
+   * making it more efficient.
+   * @param rowFilterLookup A fast lookup for matching row filters for particular nodes.
+   * @param treeSeeds Random seeds to use per tree. This is used in selecting a random number of features per node.
+   * @param numBinsPerFeature Number of bins per feature. This is used to initialize the statistics object.
+   * @param options The options to be used in Sequoia Forest.
+   * @param featureBins Feature bin descriptions.
+   * @param nextNodeIdsPerTree Next node Ids to assign per tree.
+   * @param nodeDepths Depths of nodes that are currently being trained.
+   * @return An iterator of trained node info objects. The trainer will use this to build trees.
+   */
+  override def performDistributedNodeSplits(
+    rowFilterLookup: ScheduledNodeSplitLookup,
+    treeSeeds: Array[Int],
+    numBinsPerFeature: Array[Int],
+    options: SequoiaForestOptions,
+    featureBins: Array[Bins],
+    nextNodeIdsPerTree: Array[Int],
+    nodeDepths: Array[mutable.Map[Int, Int]]): Iterator[TrainedNodeInfo] = {
+    // TODO: This seems stupid.
+    val featureHandlerLocal = featureHandler.cloneMyself // To avoid serializing the entire DiscretizedData object.
+
+    // First aggregate bin statistics across all the partitions.
+    val numTrees = options.numTrees
+    val treeType = options.treeType
+    val mtry = options.mtry
+    val numClasses = options.numClasses
+    val nodeSplitCount = rowFilterLookup.nodeSplitCount
+
+    val numFeatures = featureBins.length
+    val categoricalFeatureFlags = Array.fill[Boolean](numFeatures)(false)
+    val featureMissingValueBinIds = Array.fill[Int](numFeatures)(-1)
+    val imputationType = options.imputationType
+    val minSplitSize = options.minSplitSize
+    val depthLimit = options.maxDepth match {
+      case x if x == -1 => Int.MaxValue
+      case x => x
+    }
+
+    cfor(0)(_ < numFeatures, _ + 1)(
+      featId => {
+        categoricalFeatureFlags(featId) = featureBins(featId).isInstanceOf[CategoricalBins]
+        featureMissingValueBinIds(featId) = featureBins(featId).getMissingValueBinIdx
+      }
+    )
+
+    val trainedNodes = data.zip(nodeIdRDD).mapPartitions(rows => {
+      val partitionStats = if (treeType == TreeType.Classification_InfoGain) {
+        new InfoGainStatistics2(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry, numClasses.get)
+      } else {
+        new VarianceStatistics2(rowFilterLookup, numBinsPerFeature, treeSeeds, mtry)
+      }
+
+      while (rows.hasNext) {
+        val row = rows.next()
+        cfor(0)(_ < numTrees, _ + 1)(
+          treeId => {
+            val curNodeId = row._2(treeId)
+            val rowCnt = row._1._3(treeId).toInt
+            if (rowCnt > 0 && curNodeId >= 0) { // It can be -1 if the sample was used in a node that was trained locally as a sub-tree.
+              val nodeSplit = rowFilterLookup.getNodeSplit(treeId, curNodeId)
+              if (nodeSplit != null) {
+                val childNodeId = nodeSplit.selectChildNode(featureHandlerLocal.convertToInt(row._1._2(nodeSplit.featureId)))
+                featureHandlerLocal.addRowToStats(partitionStats, treeId, childNodeId, row._1)
+              }
+            }
+          }
+        )
+      }
+
+      partitionStats.toNodeStatisticsIterator
+    }).groupBy((nodeStats: (Int, NodeStatistics)) => nodeStats._1, nodeSplitCount).map(nodeStat => {
+      val stats = nodeStat._2
+      var mergedStats: NodeStatistics = null
+      stats.foreach(stat => {
+        if (mergedStats == null) {
+          mergedStats = stat._2
+        } else {
+          mergedStats.binStatsArray.mergeInPlace(stat._2.binStatsArray)
+        }
+      })
+
+      val treeId = mergedStats.treeId
+      val nodeId = mergedStats.nodeId
+
+      mergedStats.computeNodePredictionAndSplit(
+        categoricalFeatureFlags = categoricalFeatureFlags,
+        featureMissingValueBinIds = featureMissingValueBinIds,
+        numBinsPerFeature = numBinsPerFeature,
+        seed = treeSeeds(treeId) + nodeId,
+        minSplitSize = minSplitSize,
+        imputationType = imputationType)
+    }).collect()
+
+    // Update the nodeIdRDDs to reflect new Node IDs.
+    updateNodeIdRDD(rowFilterLookup, numTrees)
+
+    val finalTrainedNodes = new Array[TrainedNodeInfo](trainedNodes.length)
+    quickSort[TrainedNodeInfo](trainedNodes)(Ordering.by[TrainedNodeInfo, Int](trainedNode => trainedNode.nodeId))
+    cfor(0)(_ < trainedNodes.length, _ + 1)(
+      i => {
+        val trainedNode = trainedNodes(i)
+        val treeId = trainedNode.treeId
+        val nodeId = trainedNode.nodeId
+        val nodeSplit = trainedNode.nodeSplit
+        val nodeDepth = nodeDepths(treeId)(nodeId)
+        nodeDepths(treeId).remove(nodeId)
+
+        val splitImpurity = if (nodeDepth >= depthLimit) {
+          None
+        } else {
+          trainedNode.splitImpurity
+        }
+
+        val newNodeSplit = if (nodeSplit != None && nodeDepth < depthLimit) {
+          if (nodeSplit.get.isInstanceOf[CategoricalSplitOnBinId]) {
+            val catSplit = nodeSplit.get.asInstanceOf[CategoricalSplitOnBinId]
+            val binIdToNodeIdMap = mutable.Map[Int, Int]()
+            val nodeWeights = mutable.Map[Int, Double]()
+
+            var leftChildNodeId = -1
+            if (catSplit.nodeWeights.contains(0)) {
+              leftChildNodeId = nextNodeIdsPerTree(treeId)
+              nodeDepths(treeId).put(leftChildNodeId, nodeDepth + 1)
+              val leftChildWeight = catSplit.nodeWeights(0)
+              nodeWeights.put(leftChildNodeId, leftChildWeight)
+              nextNodeIdsPerTree(treeId) += 1
+            }
+
+            var rightChildNodeId = -1
+            if (catSplit.nodeWeights.contains(1)) {
+              rightChildNodeId = nextNodeIdsPerTree(treeId)
+              nodeDepths(treeId).put(rightChildNodeId, nodeDepth + 1)
+              val rightChildWeight = catSplit.nodeWeights(1)
+              nodeWeights.put(rightChildNodeId, rightChildWeight)
+              nextNodeIdsPerTree(treeId) += 1
+            }
+
+            var nanChildNodeId = -1
+            if (catSplit.nodeWeights.contains(2)) {
+              nanChildNodeId = nextNodeIdsPerTree(treeId)
+              nodeDepths(treeId).put(nanChildNodeId, nodeDepth + 1)
+              val nanChildWeight = catSplit.nodeWeights(2)
+              nodeWeights.put(nanChildNodeId, nanChildWeight)
+              nextNodeIdsPerTree(treeId) += 1
+            }
+
+            catSplit.binIdToNodeIdMap.foreach(binId_stubNodeId => {
+              val binId = binId_stubNodeId._1
+              val stubNodeId = binId_stubNodeId._2
+              val nodeId = stubNodeId match {
+                case 0 => leftChildNodeId
+                case 1 => rightChildNodeId
+                case 2 => nanChildNodeId
+              }
+
+              binIdToNodeIdMap.put(binId, nodeId)
+            })
+
+            Some(CategoricalSplitOnBinId(
+              parentNodeId = nodeId,
+              featureId = catSplit.featureId,
+              binIdToNodeIdMap = binIdToNodeIdMap,
+              nodeWeights = nodeWeights
+            ))
+          } else {
+            val numSplit = nodeSplit.get.asInstanceOf[NumericSplitOnBinId]
+            var leftChildNodeId = -1
+            if (numSplit.leftId == 0) {
+              leftChildNodeId = nextNodeIdsPerTree(treeId)
+              nodeDepths(treeId).put(leftChildNodeId, nodeDepth + 1)
+              nextNodeIdsPerTree(treeId) += 1
+            }
+
+            var rightChildNodeId = -1
+            if (numSplit.rightId == 1) {
+              rightChildNodeId = nextNodeIdsPerTree(treeId)
+              nodeDepths(treeId).put(rightChildNodeId, nodeDepth + 1)
+              nextNodeIdsPerTree(treeId) += 1
+            }
+
+            var nanChildNodeId = -1
+            if (numSplit.nanNodeId == 2) {
+              nanChildNodeId = nextNodeIdsPerTree(treeId)
+              nodeDepths(treeId).put(nanChildNodeId, nodeDepth + 1)
+              nextNodeIdsPerTree(treeId) += 1
+            }
+
+            Some(NumericSplitOnBinId(
+              parentNodeId = nodeId,
+              featureId = numSplit.featureId,
+              splitBinId = numSplit.splitBinId,
+              leftId = leftChildNodeId,
+              rightId = rightChildNodeId,
+              leftWeight = numSplit.leftWeight,
+              rightWeight = numSplit.rightWeight,
+              leftSubTreeHash = numSplit.leftSubTreeHash,
+              rightSubTreeHash = numSplit.rightSubTreeHash,
+              nanBinId = numSplit.nanBinId,
+              nanNodeId = nanChildNodeId,
+              nanWeight = numSplit.nanWeight,
+              nanSubTreeHash = numSplit.nanSubTreeHash
+            ))
+          }
+        } else {
+          None
+        }
+
+        finalTrainedNodes(i) = TrainedNodeInfo(
+          treeId = trainedNode.treeId,
+          nodeId = trainedNode.nodeId,
+          prediction = trainedNode.prediction,
+          depth = nodeDepth,
+          weight = trainedNode.weight,
+          impurity = trainedNode.impurity,
+          splitImpurity = splitImpurity,
+          nodeSplit = newNodeSplit
+        )
+      }
+    )
+
+    finalTrainedNodes.toIterator
+  }
+
+  /**
    * Update the nodeID RDD using the row filter lookup.
    * Each row filter maps from a parent Node to a child Node.
    * @param rowFilterLookup The row filter lookup that contains the row filters that we want to apply
@@ -472,7 +741,8 @@ class DiscretizedDataLocal[@specialized(Byte, Short) T](data: Array[((Double, Ar
     subTreeLookup: ScheduledNodeSplitLookup,
     featureBins: Array[Bins],
     nodeDepths: Array[mutable.Map[Int, Int]],
-    options: SequoiaForestOptions): Iterator[(Int, SequoiaTree)] = {
+    options: SequoiaForestOptions,
+    treeSeeds: Array[Int]): Iterator[(Int, SequoiaTree)] = {
     throw new UnsupportedOperationException("SubTree training is not meant for local data sources.")
   }
 
@@ -517,6 +787,20 @@ class DiscretizedDataLocal[@specialized(Byte, Short) T](data: Array[((Double, Ar
     )
 
     aggregatedStats
+  }
+
+  /**
+   * This doesn't mean anything for local data sources.
+   */
+  def performDistributedNodeSplits(
+    rowFilterLookup: ScheduledNodeSplitLookup,
+    treeSeeds: Array[Int],
+    numBinsPerFeature: Array[Int],
+    options: SequoiaForestOptions,
+    featureBins: Array[Bins],
+    nextNodeIdsPerTree: Array[Int],
+    nodeDepths: Array[mutable.Map[Int, Int]]): Iterator[TrainedNodeInfo] = {
+    throw new UnsupportedOperationException("Distributed node splits is not meant for local data sources.")
   }
 }
 

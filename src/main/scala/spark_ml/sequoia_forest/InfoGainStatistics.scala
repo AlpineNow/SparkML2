@@ -256,3 +256,10 @@ class InfoGainStatistics(
     binStatsArray.binStats(offset + binId * numClasses + label)
   }
 }
+
+class InfoGainStatistics2(
+  @transient private val nodeSplitLookup: ScheduledNodeSplitLookup,
+  numBinsPerFeature: Array[Int],
+  treeSeeds: Array[Int],
+  mtry: Int,
+  numClasses: Int) extends AggregatedStatistics2(nodeSplitLookup, new ClassificationStatisticsArrayBuilder(numClasses), numBinsPerFeature, treeSeeds, mtry)

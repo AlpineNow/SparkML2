@@ -210,3 +210,9 @@ class VarianceStatistics(
     (binStats(binOffset), binStats(binOffset + 1), binStats(binOffset + 2))
   }
 }
+
+class VarianceStatistics2(
+  @transient private val nodeSplitLookup: ScheduledNodeSplitLookup,
+  numBinsPerFeature: Array[Int],
+  treeSeeds: Array[Int],
+  mtry: Int) extends AggregatedStatistics2(nodeSplitLookup, new RegressionStatisticsArrayBuilder(), numBinsPerFeature, treeSeeds, mtry)
