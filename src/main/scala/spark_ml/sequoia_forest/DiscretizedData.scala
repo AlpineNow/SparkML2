@@ -25,6 +25,8 @@ import spark_ml.discretization.{ CategoricalBins, Bins, Discretizer }
 import spire.implicits._
 
 import spark_ml.util.Sorting._
+import org.apache.hadoop.fs.FileSystem
+import org.apache.hadoop.fs.Path
 
 /**
  * Various data types for Sequoia Forest - can be RDD or local array. The features must be discretized into unsigned Byte or Short.
@@ -708,11 +710,18 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
     if (checkpointDir != null) {
       nodeIdRDDUpdateCount += 1
       if (nodeIdRDDUpdateCount >= checkpointInterval) {
+        val oldCheckpointFile = nodeIdRDD.getCheckpointFile
+
         // To improve performance.
         newNodeIdRDD.checkpoint()
         nodeIdRDD.unpersist()
         newNodeIdRDD.persist(data.getStorageLevel)
         nodeIdRDDUpdateCount = 0
+
+        if (oldCheckpointFile != None) {
+          val fs = FileSystem.get(newNodeIdRDD.sparkContext.hadoopConfiguration)
+          fs.delete(new Path(oldCheckpointFile.get), true)
+        }
       }
     }
 
