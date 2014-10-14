@@ -35,9 +35,10 @@ import spire.implicits._
 object ImputationType extends Enumeration {
   type ImputationType = Value
   val SplitOnMissing = Value(0)
-  val PredictMissingNumbers = Value(1)
-  val Surrogate = Value(2)
-  val RFImpute = Value(3)
+  // TODO: The following.
+  // val PredictMissingNumbers = Value(1)
+  // val Surrogate = Value(2)
+  // val RFImpute = Value(3)
 }
 
 /**

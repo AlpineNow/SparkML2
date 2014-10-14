@@ -17,6 +17,8 @@
 
 package spark_ml.sequoia_forest
 
+import org.apache.hadoop.conf.Configuration
+
 import scopt.OptionParser
 import org.apache.spark.{ SparkContext, SparkConf }
 import breeze.numerics.log2
@@ -106,67 +108,68 @@ object SequoiaForestPredictor {
       val delimiter = config.delimiter
       val outputPath = config.outputPath
       val computeLogLoss = config.computeLogLoss
-
-      val forest: SequoiaForest = SequoiaForestReader.readForest(config.forestPath, sc.hadoopConfiguration)
-      val treeType = forest.treeType
-      val broadcastForest = sc.broadcast(forest)
-
-      val predictor = (line: String) => {
-        val elems = line.split(delimiter)
-        val numUsedColumns = elems.length - indicesToIgnore.size
-        val numFeatures = if (labelIndex >= 0) numUsedColumns - 1 else numUsedColumns
-        val features = new Array[Double](numFeatures)
-        val outputFields = new Array[String](outputIndices.size)
-
-        var col = 0
-        var featId = 0
-        var outputId = 0
-        while (col < elems.length) {
-          if (col != labelIndex && !indicesToIgnore.contains(col)) {
-            // Feature indices get shifted after subtracting the label index and the ignored columns.
-            val featureValue = if (elems(col) == "") {
-              Double.NaN
-            } else {
-              elems(col).toDouble
-            }
-
-            features(featId) = featureValue
-            featId += 1
-          }
-
-          if (outputIndices.contains(col)) {
-            outputFields(outputId) = elems(col)
-            outputId += 1
-          }
-
-          col += 1
-        }
-
-        val prediction = broadcastForest.value.predict(features)
-
-        (features, outputFields, prediction)
-      }
-
-      val labelParser = (line: String) => {
-        val elems = line.split(delimiter)
-        elems(labelIndex).toDouble
-      }
+      val forestPath = config.forestPath
 
       val rawRDD = sc.textFile(config.inputPath)
-      val predictionRDD = rawRDD.map(predictor)
+      val predictionRDD = rawRDD.mapPartitions(rows => {
+        val forest: SequoiaForest = SequoiaForestReader.readForest(forestPath, new Configuration())
+        rows.map(row => {
+          val elems = row.split(delimiter)
+          val numUsedColumns = elems.length - indicesToIgnore.size
+          val numFeatures = if (labelIndex >= 0) numUsedColumns - 1 else numUsedColumns
+          val features = new Array[Double](numFeatures)
+          val outputFields = new Array[String](outputIndices.size)
+
+          var col = 0
+          var featId = 0
+          var outputId = 0
+          while (col < elems.length) {
+            if (col != labelIndex && !indicesToIgnore.contains(col)) {
+              // Feature indices get shifted after subtracting the label index and the ignored columns.
+              val featureValue = if (elems(col) == "") {
+                Double.NaN
+              } else {
+                elems(col).toDouble
+              }
+
+              features(featId) = featureValue
+              featId += 1
+            }
+
+            if (outputIndices.contains(col)) {
+              outputFields(outputId) = elems(col)
+              outputId += 1
+            }
+
+            col += 1
+          }
+
+          val prediction = forest.predict(features)
+
+          (outputFields, prediction, forest.treeType)
+        })
+      })
+
+      predictionRDD.persist()
 
       // Predict and save the results in the output path.
       predictionRDD.map(row => {
-        val outputFields = row._2
-        val prediction = row._3
-        outputFields.foldLeft("")((curStr, str) => curStr + str + delimiter) + prediction
+        val outputFields = row._1
+        val prediction = row._2
+        outputFields.foldLeft("")((curStr, str) => curStr + str + delimiter) + prediction(0)._1 + delimiter + prediction(0)._2
       }).saveAsTextFile(outputPath)
 
       // If there's the label index, compare prediction
       if (labelIndex >= 0) {
+        val treeType = predictionRDD.first()._3
+        val labelParser = (line: String) => {
+          val elems = line.split(delimiter)
+          elems(labelIndex).toDouble
+        }
+
         val labelRDD = rawRDD.map(labelParser)
         val validationStats = predictionRDD.zip(labelRDD).map(row => {
-          val prediction = row._1._3
+          val prediction = row._1._2
           val label = row._2
           if (computeLogLoss) {
             val prob = if (treeType == TreeType.Classification_InfoGain) {
@@ -189,7 +192,7 @@ object SequoiaForestPredictor {
             }
           }
         }).reduce((a, b) => {
-          if (treeType == TreeType.Classification_InfoGain) {
+          if (treeType == TreeType.Classification_InfoGain || computeLogLoss) {
             (a._1 + b._1, a._2 + b._2)
           } else {
             val totalCount = a._2 + b._2

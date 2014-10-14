@@ -163,12 +163,14 @@ object CategoryToNumberMapRunner {
               idx => {
                 val colName = header(idx)
                 val outputDelimiter = if (idx == 0) "" else delimiter
+
+                // TODO: Handling a previously unseen categorical feature value is very ad-hoc.
                 if (broadcastMap.value.contains(colName)) {
                   if (broadcastMap.value(colName).contains(lineElems(idx))) {
                     outputLine += outputDelimiter + broadcastMap.value(colName)(lineElems(idx)).toString
-                  } else if (broadcastMap.value(colName).contains("")) {
+                  } else if (broadcastMap.value(colName).contains("")) { // Treating a new categorical feature value as an empty string.
                     outputLine += outputDelimiter + broadcastMap.value(colName)("").toString
-                  } else {
+                  } else { // Otherwise, the unknown feature value is treated as a new categorical value.
                     outputLine += outputDelimiter + broadcastMap.value(colName).size.toString
                   }
                 } else {

@@ -141,10 +141,10 @@ object CategoryCoarsener {
 
       transformation.put(colIdx, mutable.Map[Int, Int]())
       val maxCatVal = math.min(maxCardinality - 1, sortedIndices.length - 1)
-      cfor(sortedIndices.length - 1)(_ > (sortedIndices.length - maxCatVal - 1), _ - 1)(
+      cfor(sortedIndices.length - 1)(_ > (sortedIndices.length - maxCardinality - 1), _ - 1)(
         i => {
           val prevCatVal = sortedIndices(i)
-          val newCatVal = i - (sortedIndices.length - 1) + (maxCatVal - 1)
+          val newCatVal = i - (sortedIndices.length - 1) + maxCatVal
           transformation(colIdx).put(prevCatVal, newCatVal)
 
           println("Categorical value '" + prevCatVal + "' has occurred " + counts(prevCatVal) + " times.")
