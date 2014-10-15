@@ -199,7 +199,7 @@ object SequoiaForestRunner {
 
       val delimiter = config.delimiter
       val lineParser = (line: String) => {
-        val elems = line.split(delimiter)
+        val elems = line.split(delimiter, -1)
         val label = elems(labelIndex).toDouble
         val features = new Array[Double](elems.length - 1 - indicesToIgnore.size)
         var col = 0

@@ -114,7 +114,7 @@ object SequoiaForestPredictor {
       val predictionRDD = rawRDD.mapPartitions(rows => {
         val forest: SequoiaForest = SequoiaForestReader.readForest(forestPath, new Configuration())
         rows.map(row => {
-          val elems = row.split(delimiter)
+          val elems = row.split(delimiter, -1)
           val numUsedColumns = elems.length - indicesToIgnore.size
           val numFeatures = if (labelIndex >= 0) numUsedColumns - 1 else numUsedColumns
           val features = new Array[Double](numFeatures)
@@ -163,7 +163,7 @@ object SequoiaForestPredictor {
       if (labelIndex >= 0) {
         val treeType = predictionRDD.first()._3
         val labelParser = (line: String) => {
-          val elems = line.split(delimiter)
+          val elems = line.split(delimiter, -1)
           elems(labelIndex).toDouble
         }
 
