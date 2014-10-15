@@ -32,7 +32,7 @@ case class CategoryToNumberMapRunnerConfig(
   outputPath: String = null,
   mapPath: String = null,
   readPreviousMap: Boolean = false,
-  delimiter: String = ",",
+  delimiter: String = "\t",
   headerExists: Boolean = false,
   colIndices: Array[Int] = Array[Int](),
   leaveEmptyString: Boolean = true)
@@ -63,7 +63,7 @@ object CategoryToNumberMapRunner {
         .text("Whether we want to read a previous map and apply it.")
         .action((x, c) => c.copy(readPreviousMap = x))
       opt[String]("delimiter")
-        .text("Delimiter string for the input data. The default is \",\"")
+        .text("Delimiter string for the input data. The default is \"\\t\"")
         .action((x, c) => c.copy(delimiter = x))
       opt[Boolean]("headerExists")
         .text("Whether a header exists in the input data. The default is false.")

@@ -24,7 +24,7 @@ import scopt.OptionParser
 case class FeatureHashingRunnerConfig(
   inputPath: String = null,
   outputPath: String = null,
-  delimiter: String = ",",
+  delimiter: String = "\t",
   headerExists: Boolean = false,
   colIndices: Array[Int] = Array[Int](),
   hashSpaceSize: Int = 256,
@@ -45,7 +45,7 @@ object FeatureHashingRunner {
         .required()
         .action((x, c) => c.copy(outputPath = x))
       opt[String]("delimiter")
-        .text("Delimiter string for the input data. The default is \",\"")
+        .text("Delimiter string for the input data. The default is \"\\t\"")
         .action((x, c) => c.copy(delimiter = x))
       opt[Boolean]("headerExists")
         .text("Whether a header exists in the input data. The default is false.")
