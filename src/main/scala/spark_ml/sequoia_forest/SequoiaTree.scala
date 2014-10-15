@@ -129,7 +129,9 @@ case class SequoiaNode(
   impurity: Double,
   weight: Double,
   splitImpurity: Option[Double],
-  split: Option[NodeSplit]) extends Serializable
+  split: Option[NodeSplit]) {
+  @transient var heaviestChildId: Int = -1
+}
 
 /**
  * A tree.
@@ -174,23 +176,27 @@ case class SequoiaTree(var treeId: Int) {
       val split = curNode.split.get
       var childId = curNode.split.get.selectChildNode(features(split.featureId))
       if (childId == -1) {
-        // If the child is not found, we'll go down the path of the child node with the largest weight.
-        val allChildIds = curNode.split.get.getChildNodeIds
-        var maxWeight = 0.0
-        allChildIds.foreach(ci => {
-          val childWeight = if (nodes.contains(ci)) {
-            nodes(ci).weight
-          } else if (subTrees.contains(ci)) {
-            subTrees(ci).nodes(1).weight
-          } else {
-            return (curNode.prediction, curNode.weight)
-          }
+        if (curNode.heaviestChildId <= 0) { // If we don't know the heaviest child Id, then find it and cache it.
+          // If the child is not found, we'll go down the path of the child node with the largest weight.
+          val allChildIds = curNode.split.get.getChildNodeIds
+          var maxWeight = 0.0
+          allChildIds.foreach(ci => {
+            val childWeight = if (nodes.contains(ci)) {
+              nodes(ci).weight
+            } else if (subTrees.contains(ci)) {
+              subTrees(ci).nodes(1).weight
+            } else {
+              return (curNode.prediction, curNode.weight)
+            }
 
-          if (childWeight > maxWeight) {
-            maxWeight = childWeight
-            childId = ci
-          }
-        })
+            if (childWeight > maxWeight) {
+              maxWeight = childWeight
+              curNode.heaviestChildId = ci
+            }
+          })
+        }
+
+        childId = curNode.heaviestChildId
       }
 
       if (!nodes.contains(childId)) {

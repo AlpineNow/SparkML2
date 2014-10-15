@@ -710,7 +710,7 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
     if (checkpointDir != null) {
       nodeIdRDDUpdateCount += 1
       if (nodeIdRDDUpdateCount >= checkpointInterval) {
-        val oldCheckpointFile = nodeIdRDD.getCheckpointFile
+        val oldCheckpointFile = nodeIdRDD.getCheckpointFile.getOrElse("")
 
         // To improve performance.
         newNodeIdRDD.checkpoint()
@@ -718,9 +718,10 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
         newNodeIdRDD.persist(data.getStorageLevel)
         nodeIdRDDUpdateCount = 0
 
-        if (oldCheckpointFile != None) {
+        if (oldCheckpointFile != "") {
+          println("Deleting the old checkpoint folder " + oldCheckpointFile)
           val fs = FileSystem.get(newNodeIdRDD.sparkContext.hadoopConfiguration)
-          fs.delete(new Path(oldCheckpointFile.get), true)
+          fs.delete(new Path(oldCheckpointFile), true)
         }
       }
     }
