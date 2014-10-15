@@ -34,7 +34,8 @@ case class CategoryToNumberMapRunnerConfig(
   readPreviousMap: Boolean = false,
   delimiter: String = ",",
   headerExists: Boolean = false,
-  colIndices: Array[Int] = Array[Int]())
+  colIndices: Array[Int] = Array[Int](),
+  leaveEmptyString: Boolean = true)
 
 /**
  * This is a command line tool that either:
@@ -71,6 +72,9 @@ object CategoryToNumberMapRunner {
         .text("A comma separated indices for columns in the input that we want to convert.")
         .required()
         .action((x, c) => c.copy(colIndices = x.split(",").map(value => value.toInt)))
+      opt[Boolean]("leaveEmptyString")
+        .text("Whether to leave empty strings as they are or to treat them as categorical values. The default value is true.")
+        .action((x, c) => c.copy(leaveEmptyString = x))
     }
 
     parser.parse(args, defaultConfig).map { config =>
@@ -121,7 +125,9 @@ object CategoryToNumberMapRunner {
         m
       } else {
         // Otherwise, compute a new mapping.
-        val m = DistinctValueCounter.mapDistinctValuesToIntegers(DistinctValueCounter.getDistinctValues(inputRDD, config.delimiter, config.headerExists, config.colIndices))
+        val m = DistinctValueCounter.mapDistinctValuesToIntegers(
+          DistinctValueCounter.getDistinctValues(inputRDD, config.delimiter, config.headerExists, config.colIndices),
+          config.leaveEmptyString)
         val colNameToM = mutable.Map[String, mutable.Map[String, Int]]()
         cfor(0)(_ < config.colIndices.length, _ + 1)(
           i => {
@@ -147,6 +153,7 @@ object CategoryToNumberMapRunner {
       println("Free memory : " + (Runtime.getRuntime.freeMemory().toDouble / 1024.0 / 1024.0) + " MB")
 
       val broadcastMap = sc.broadcast(distinctValueMap)
+      val leaveEmptyString = config.leaveEmptyString
 
       // Now that we have the distinct value map, apply it.
       val convertedRDD = inputRDD.mapPartitionsWithIndex((partitionIdx: Int, lines: Iterator[String]) => {
@@ -166,12 +173,16 @@ object CategoryToNumberMapRunner {
 
                 // TODO: Handling a previously unseen categorical feature value is very ad-hoc.
                 if (broadcastMap.value.contains(colName)) {
-                  if (broadcastMap.value(colName).contains(lineElems(idx))) {
-                    outputLine += outputDelimiter + broadcastMap.value(colName)(lineElems(idx)).toString
-                  } else if (broadcastMap.value(colName).contains("")) { // Treating a new categorical feature value as an empty string.
-                    outputLine += outputDelimiter + broadcastMap.value(colName)("").toString
-                  } else { // Otherwise, the unknown feature value is treated as a new categorical value.
-                    outputLine += outputDelimiter + broadcastMap.value(colName).size.toString
+                  if (lineElems(idx) == "" && leaveEmptyString) {
+                    outputLine += outputDelimiter + lineElems(idx)
+                  } else {
+                    if (broadcastMap.value(colName).contains(lineElems(idx))) {
+                      outputLine += outputDelimiter + broadcastMap.value(colName)(lineElems(idx)).toString
+                    } else if (broadcastMap.value(colName).contains("")) { // Treating a new categorical feature value as an empty string.
+                      outputLine += outputDelimiter + broadcastMap.value(colName)("").toString
+                    } else { // Otherwise, the unknown feature value is treated as a new categorical value.
+                      outputLine += outputDelimiter + broadcastMap.value(colName).size.toString
+                    }
                   }
                 } else {
                   outputLine += outputDelimiter + lineElems(idx)

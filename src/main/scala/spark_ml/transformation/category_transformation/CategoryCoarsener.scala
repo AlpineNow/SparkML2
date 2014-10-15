@@ -23,6 +23,7 @@ import scala.collection.mutable
 
 import spire.implicits._
 
+// TODO: Does not work with categorical features that have empty strings.
 object CategoryMapper {
   /**
    * Apply the categorical feature mapping to the original data and get a transformed data set.

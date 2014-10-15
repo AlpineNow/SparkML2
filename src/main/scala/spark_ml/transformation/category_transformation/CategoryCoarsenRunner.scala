@@ -35,6 +35,7 @@ case class CategoryCoarsenRunnerConfig(
   colIndices: Array[Int] = Array[Int](),
   maxCardinality: Int = 256)
 
+// TODO: Does not work with categorical features that have empty strings.
 object CategoryCoarsenRunner {
   def main(args: Array[String]) {
     val defaultConfig = CategoryCoarsenRunnerConfig()

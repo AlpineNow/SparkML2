@@ -76,9 +76,12 @@ object DistinctValueCounter {
    * Map a set of distinct values to an increasing non-negative numbers.
    * E.g., {'Women' -> 0, 'Men' -> 1}, etc.
    * @param distinctValues A set of distinct values for different columns (first key is index to a column).
+   * @param leaveEmptyString Leave empty strings out (do not map them to numbers).
    * @return A map of distinct values to integers for different columns (first key is index to a column).
    */
-  def mapDistinctValuesToIntegers(distinctValues: mutable.Map[Int, mutable.Set[String]]): mutable.Map[Int, mutable.Map[String, Int]] = {
+  def mapDistinctValuesToIntegers(
+    distinctValues: mutable.Map[Int, mutable.Set[String]],
+    leaveEmptyString: Boolean): mutable.Map[Int, mutable.Map[String, Int]] = {
     val distinctValMapsToInts = mutable.Map[Int, mutable.Map[String, Int]]()
     distinctValues.foreach(index_values => {
       val index = index_values._1
@@ -87,8 +90,10 @@ object DistinctValueCounter {
       distinctValMapsToInts.put(index, mapsToInts)
       var intVal = 0
       values.foreach(value => {
-        mapsToInts.put(value, intVal)
-        intVal += 1
+        if (!(value == "" && leaveEmptyString)) {
+          mapsToInts.put(value, intVal)
+          intVal += 1
+        }
       })
     })
 

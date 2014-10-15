@@ -28,7 +28,7 @@ case class FeatureHashingRunnerConfig(
   headerExists: Boolean = false,
   colIndices: Array[Int] = Array[Int](),
   hashSpaceSize: Int = 256,
-  leaveEmptyString: Boolean = false)
+  leaveEmptyString: Boolean = true)
 
 object FeatureHashingRunner {
   def main(args: Array[String]) {
@@ -51,7 +51,7 @@ object FeatureHashingRunner {
         .text("Whether a header exists in the input data. The default is false.")
         .action((x, c) => c.copy(headerExists = x))
       opt[Boolean]("leaveEmptyString")
-        .text("Whether to leave empty strings as they are. Or to treat them as categorical values.")
+        .text("Whether to leave empty strings as they are or to treat them as categorical values. The default value is true.")
         .action((x, c) => c.copy(leaveEmptyString = x))
       opt[String]("colIndices")
         .text("A comma separated indices for categorical columns in the input.")

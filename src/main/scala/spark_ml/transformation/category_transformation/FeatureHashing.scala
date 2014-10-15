@@ -30,7 +30,7 @@ object FeatureHashing {
    * @param data The raw RDD of strings. Each string line is expected to be a delimited row of column values.
    * @param categoricalFeatureNames Column names of the categorical features.
    * @param hashFunction The hash function to apply to string values.
-   * @param leaveEmptyStrings Whether to leave empty strings unprocessed, or to treat them as a categorical value.
+   * @param leaveEmptyString Whether to leave empty strings unprocessed, or to treat them as a categorical value.
    * @param delimiter Delimiter to split lines into columns.
    * @param header The header of column names.
    * @param headerExists Whether the header also exists in the RDD or not.
@@ -40,7 +40,7 @@ object FeatureHashing {
     data: RDD[String],
     categoricalFeatureNames: Set[String],
     hashFunction: String => Int,
-    leaveEmptyStrings: Boolean,
+    leaveEmptyString: Boolean,
     delimiter: String,
     header: Array[String],
     headerExists: Boolean): RDD[String] = {
@@ -58,7 +58,11 @@ object FeatureHashing {
               val colName = header(idx)
               val outputDelimiter = if (idx == 0) "" else delimiter
               if (categoricalFeatureNames.contains(colName)) {
-                outputLine += outputDelimiter + hashFunction(lineElems(idx)).toString
+                if (lineElems(idx) == "" && leaveEmptyString) {
+                  outputLine += outputDelimiter + lineElems(idx)
+                } else {
+                  outputLine += outputDelimiter + hashFunction(lineElems(idx)).toString
+                }
               } else {
                 outputLine += outputDelimiter + lineElems(idx)
               }
