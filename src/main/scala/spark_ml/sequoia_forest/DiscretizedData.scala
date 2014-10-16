@@ -244,9 +244,11 @@ class UnsignedShortFeatureHandler extends FeatureHandler[Short] {
  */
 class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T], Array[Byte])])(featureHandler: FeatureHandler[T]) extends DiscretizedData {
   var nodeIdRDD: RDD[Array[Int]] = null
-  var checkpointDir: String = null
+  var checkpointRootDir: String = null
   var checkpointInterval: Int = 10
+
   var nodeIdRDDUpdateCount: Int = 0
+  var prevCheckpointedNodeIdRDD: RDD[Array[Int]] = null // To keep track of last checkpointed RDDs.
 
   override def isLocal: Boolean = false
 
@@ -256,8 +258,8 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
   override def getSparkContext: SparkContext = data.sparkContext
 
   override def setCheckpointDir(dir: String): Unit = {
-    checkpointDir = dir
-    data.sparkContext.setCheckpointDir(checkpointDir)
+    checkpointRootDir = dir
+    data.sparkContext.setCheckpointDir(checkpointRootDir)
   }
 
   override def setCheckpointInterval(interval: Int): Unit = {
@@ -707,22 +709,24 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
       nodeIds
     })
 
-    if (checkpointDir != null) {
+    if (checkpointRootDir != null) {
       nodeIdRDDUpdateCount += 1
       if (nodeIdRDDUpdateCount >= checkpointInterval) {
-        val oldCheckpointFile = nodeIdRDD.getCheckpointFile.getOrElse("")
+        if (prevCheckpointedNodeIdRDD != null) {
+          println("Deleting the old checkpointed folder " + prevCheckpointedNodeIdRDD.getCheckpointFile.get)
+          val fs = FileSystem.get(prevCheckpointedNodeIdRDD.sparkContext.hadoopConfiguration)
+          fs.delete(new Path(prevCheckpointedNodeIdRDD.getCheckpointFile.get), true)
+        }
 
         // To improve performance.
         newNodeIdRDD.checkpoint()
-        nodeIdRDD.unpersist()
+        if (prevCheckpointedNodeIdRDD != null) {
+          prevCheckpointedNodeIdRDD.unpersist()
+        }
+
+        prevCheckpointedNodeIdRDD = newNodeIdRDD
         newNodeIdRDD.persist(data.getStorageLevel)
         nodeIdRDDUpdateCount = 0
-
-        if (oldCheckpointFile != "") {
-          println("Deleting the old checkpoint folder " + oldCheckpointFile)
-          val fs = FileSystem.get(newNodeIdRDD.sparkContext.hadoopConfiguration)
-          fs.delete(new Path(oldCheckpointFile), true)
-        }
       }
     }
 

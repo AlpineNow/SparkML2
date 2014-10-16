@@ -124,12 +124,12 @@ case class CategoricalSplit(
  * @param split Split (None means leaf)
  */
 case class SequoiaNode(
-  nodeId: Int,
-  prediction: Double,
-  impurity: Double,
-  weight: Double,
-  splitImpurity: Option[Double],
-  split: Option[NodeSplit]) {
+    nodeId: Int,
+    prediction: Double,
+    impurity: Double,
+    weight: Double,
+    splitImpurity: Option[Double],
+    split: Option[NodeSplit]) {
   @transient var heaviestChildId: Int = -1
 }
 
