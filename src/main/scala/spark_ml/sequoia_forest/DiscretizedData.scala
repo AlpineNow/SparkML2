@@ -248,7 +248,7 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
   var checkpointInterval: Int = 10
 
   var nodeIdRDDUpdateCount: Int = 0
-  var prevCheckpointedNodeIdRDD: RDD[Array[Int]] = null // To keep track of last checkpointed RDDs.
+  val checkpointQueue: mutable.Queue[RDD[Array[Int]]] = mutable.Queue[RDD[Array[Int]]]() // To keep track of last checkpointed RDDs.
 
   override def isLocal: Boolean = false
 
@@ -710,22 +710,26 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
     })
 
     if (checkpointRootDir != null) {
+      // Check the checkpoint queue and delete old unneeded ones.
+      var canDelete = true
+      while (checkpointQueue.size > 1 && canDelete) {
+        if (checkpointQueue.get(1).get.getCheckpointFile != None) { // The second to the last one must have been checkpointed for us to delete the last one.
+          val old = checkpointQueue.dequeue
+          val fs = FileSystem.get(old.sparkContext.hadoopConfiguration)
+          println("Deleting the old checkpointed folder " + old.getCheckpointFile.get)
+          fs.delete(new Path(old.getCheckpointFile.get), true)
+          old.unpersist() // Also, unpersist this one now.
+        } else {
+          canDelete = false
+        }
+      }
+
       nodeIdRDDUpdateCount += 1
       if (nodeIdRDDUpdateCount >= checkpointInterval) {
-        if (prevCheckpointedNodeIdRDD != null) {
-          println("Deleting the old checkpointed folder " + prevCheckpointedNodeIdRDD.getCheckpointFile.get)
-          val fs = FileSystem.get(prevCheckpointedNodeIdRDD.sparkContext.hadoopConfiguration)
-          fs.delete(new Path(prevCheckpointedNodeIdRDD.getCheckpointFile.get), true)
-        }
-
         // To improve performance.
-        newNodeIdRDD.checkpoint()
-        if (prevCheckpointedNodeIdRDD != null) {
-          prevCheckpointedNodeIdRDD.unpersist()
-        }
-
-        prevCheckpointedNodeIdRDD = newNodeIdRDD
         newNodeIdRDD.persist(data.getStorageLevel)
+        newNodeIdRDD.checkpoint()
+        checkpointQueue.enqueue(newNodeIdRDD)
         nodeIdRDDUpdateCount = 0
       }
     }
