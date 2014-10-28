@@ -247,6 +247,8 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
   var checkpointRootDir: String = null
   var checkpointInterval: Int = 10
 
+  var prevNodeIdRDD: RDD[Array[Int]] = null
+
   var nodeIdRDDUpdateCount: Int = 0
   val checkpointQueue: mutable.Queue[RDD[Array[Int]]] = mutable.Queue[RDD[Array[Int]]]() // To keep track of last checkpointed RDDs.
 
@@ -682,6 +684,13 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
   private def updateNodeIdRDD(rowFilterLookup: ScheduledNodeSplitLookup, numTrees: Int, markSubTreesOnly: Boolean = false): Unit = {
     // TODO: This seems stupid.
     val featureHandlerLocal = featureHandler.cloneMyself // To avoid serializing the entire DiscretizedData object.
+    if (prevNodeIdRDD != null) {
+      // Unpersist the previous one if one exists.
+      prevNodeIdRDD.unpersist()
+    }
+
+    // The current one becomes the previous one before we update.
+    prevNodeIdRDD = nodeIdRDD
 
     // Now, update all rows' node Ids.
     val newNodeIdRDD = data.zip(nodeIdRDD).map(row => {
@@ -709,6 +718,8 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
       nodeIds
     })
 
+    newNodeIdRDD.persist(data.getStorageLevel)
+
     if (checkpointRootDir != null) {
       // Check the checkpoint queue and delete old unneeded ones.
       var canDelete = true
@@ -718,7 +729,6 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
           val fs = FileSystem.get(old.sparkContext.hadoopConfiguration)
           println("Deleting the old checkpointed folder " + old.getCheckpointFile.get)
           fs.delete(new Path(old.getCheckpointFile.get), true)
-          old.unpersist() // Also, unpersist this one now.
         } else {
           canDelete = false
         }
@@ -726,8 +736,6 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
 
       nodeIdRDDUpdateCount += 1
       if (nodeIdRDDUpdateCount >= checkpointInterval) {
-        // To improve performance.
-        newNodeIdRDD.persist(data.getStorageLevel)
         newNodeIdRDD.checkpoint()
         checkpointQueue.enqueue(newNodeIdRDD)
         nodeIdRDDUpdateCount = 0
