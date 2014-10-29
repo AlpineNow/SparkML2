@@ -23,6 +23,7 @@ import spire.implicits._
 
 import org.apache.spark.rdd.RDD
 import scala.util.Random
+import scala.util.Sorting._
 import spark_ml.util.RandomSet
 
 /**
@@ -39,7 +40,8 @@ object EqualFrequencyDiscretizer extends Discretizer {
       labelIsCategorical: Boolean,
       seed: Int) {
     var maxLabelValue: Double = Double.NegativeInfinity
-    val numericSamples = mutable.Map[Int, mutable.ArrayBuffer[Double]]()
+    val numericSamples = mutable.Map[Int, Array[Double]]()
+    val numericSampleCnts = mutable.Map[Int, Int]()
     val nanFound = mutable.Map[Int, Boolean]()
     val categoricalMaxVals = mutable.Map[Int, Int]()
     var numSamplesSeen = 0
@@ -49,7 +51,8 @@ object EqualFrequencyDiscretizer extends Discretizer {
       cfor(0)(_ < numFeatures, _ + 1)(
         featId => {
           if (!categoricalFeatureIndices.contains(featId)) {
-            numericSamples.put(featId, new mutable.ArrayBuffer[Double]())
+            numericSamples.put(featId, Array.fill[Double](maxNumericFeatureSamples)(0.0))
+            numericSampleCnts.put(featId, 0)
           } else {
             categoricalMaxVals.put(featId, 0)
           }
@@ -79,10 +82,11 @@ object EqualFrequencyDiscretizer extends Discretizer {
           nanFound.put(featId, true)
         } else {
           if (!categoricalFeatureIndices.contains(featId)) {
-            val sampleCount = numericSamples(featId).length
+            val sampleCount = numericSampleCnts(featId)
             if (sampleCount < maxNumericFeatureSamples) {
               // If there aren't enough samples, just add the value to the array.
-              numericSamples(featId) += value
+              numericSamples(featId)(sampleCount) = value
+              numericSampleCnts(featId) = sampleCount + 1
             } else {
               // If the samples are filled, then we'll sample and replace one of the previously selected values.
               // This does M random samples from a stream.
@@ -133,34 +137,35 @@ object EqualFrequencyDiscretizer extends Discretizer {
       numericSamples.foreach(featId_sample => {
         val featId = featId_sample._1
         val mySample = featId_sample._2
-        val mySampleCount = mySample.length
+        val mySampleCount = numericSampleCnts(featId)
 
         val theirSample = another.numericSamples(featId)
-        val theirSampleCount = theirSample.length
+        val theirSampleCount = another.numericSampleCnts(featId)
         val totalSampleCount = mySampleCount + theirSampleCount
 
         val mergedSampleCount = math.min(totalSampleCount, maxNumericFeatureSamples)
-
-        val merged = if (mergedSampleCount < totalSampleCount) {
-          val mergedSample = new mutable.ArrayBuffer[Double](mergedSampleCount)
+        val mergedSample = Array.fill[Double](mergedSampleCount)(0.0)
+        if (mergedSampleCount < totalSampleCount) {
           val selectedSampleIndices = RandomSet.nChooseK(mergedSampleCount, totalSampleCount, randGen)
           cfor(0)(_ < selectedSampleIndices.length, _ + 1)(
             i => {
               val sampleIdx = selectedSampleIndices(i)
               if (sampleIdx < mySampleCount) {
-                mergedSample += mySample(sampleIdx)
+                mergedSample(i) = mySample(sampleIdx)
               } else {
-                mergedSample += theirSample(sampleIdx - mySampleCount)
+                mergedSample(i) = theirSample(sampleIdx - mySampleCount)
               }
             }
           )
 
           mergedSample
         } else {
-          mySample ++ theirSample
+          mySample.copyToArray(mergedSample, 0, mySampleCount)
+          theirSample.copyToArray(mergedSample, mySampleCount, theirSampleCount)
         }
 
-        numericSamples(featId) = merged
+        numericSamples(featId) = mergedSample
+        numericSampleCnts(featId) = mergedSampleCount
       })
 
       categoricalMaxVals.keys.foreach(featId => categoricalMaxVals(featId) = math.max(categoricalMaxVals(featId), another.categoricalMaxVals(featId)))
@@ -205,9 +210,17 @@ object EqualFrequencyDiscretizer extends Discretizer {
       featId => {
         if (!categoricalFeatureIndices.contains(featId)) {
           val numBinsForThis = numBins - (if (overallSample.nanFound(featId)) 1 else 0)
-          val minBinWeight = math.ceil(overallSample.numericSamples(featId).length.toDouble / numBinsForThis.toDouble).toInt
+          val numericSampleCnt = overallSample.numericSampleCnts(featId)
+          val minBinWeight = math.ceil(numericSampleCnt.toDouble / numBinsForThis.toDouble).toInt
           val numericSample = overallSample.numericSamples(featId)
-          val sortedNumericSample = numericSample.sorted
+          val sortedNumericSample = if (numericSampleCnt < numericSample.length) {
+            val slicedSample = numericSample.slice(0, numericSampleCnt)
+            quickSort(slicedSample)
+            slicedSample
+          } else {
+            quickSort(numericSample)
+            numericSample
+          }
 
           // Create bins from left to right, and we'll move onto a new bin once the current bin is filled.
           // This guarantees that we'll have at most numBins bins and not more.
