@@ -20,6 +20,7 @@ package spark_ml.sequoia_forest
 import scala.collection.mutable
 
 import org.apache.spark.SparkContext
+import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
 import spark_ml.discretization.{ CategoricalBins, Bins, Discretizer }
 import spire.implicits._
@@ -522,7 +523,13 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
       }
 
       partitionStats.toNodeStatisticsIterator
-    }).groupBy((nodeStats: (Int, NodeStatistics)) => nodeStats._1, nodeSplitCount).map(nodeStat => {
+    }).reduceByKey((a, b) => {
+      a.binStatsArray.mergeInPlace(b.binStatsArray)
+      a
+    }).map({
+      case (key, mergedStats) =>
+        /*
+      .groupBy((nodeStats: (Int, NodeStatistics)) => nodeStats._1, nodeSplitCount).map(nodeStat => {
       val stats = nodeStat._2
       var mergedStats: NodeStatistics = null
       stats.foreach(stat => {
@@ -532,17 +539,18 @@ class DiscretizedDataRDD[@specialized(Byte, Short) T](data: RDD[(Double, Array[T
           mergedStats.binStatsArray.mergeInPlace(stat._2.binStatsArray)
         }
       })
+      */
 
-      val treeId = mergedStats.treeId
-      val nodeId = mergedStats.nodeId
+        val treeId = mergedStats.treeId
+        val nodeId = mergedStats.nodeId
 
-      mergedStats.computeNodePredictionAndSplit(
-        categoricalFeatureFlags = categoricalFeatureFlags,
-        featureMissingValueBinIds = featureMissingValueBinIds,
-        numBinsPerFeature = numBinsPerFeature,
-        seed = treeSeeds(treeId) + nodeId,
-        minSplitSize = minSplitSize,
-        imputationType = imputationType)
+        mergedStats.computeNodePredictionAndSplit(
+          categoricalFeatureFlags = categoricalFeatureFlags,
+          featureMissingValueBinIds = featureMissingValueBinIds,
+          numBinsPerFeature = numBinsPerFeature,
+          seed = treeSeeds(treeId) + nodeId,
+          minSplitSize = minSplitSize,
+          imputationType = imputationType)
     }).collect()
 
     // Update the nodeIdRDDs to reflect new Node IDs.

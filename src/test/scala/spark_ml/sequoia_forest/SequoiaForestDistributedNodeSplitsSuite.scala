@@ -20,7 +20,7 @@ package spark_ml.sequoia_forest
 import spark_ml.util._
 import org.scalatest.FunSuite
 import spark_ml.discretization._
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
+import java.io.{ ByteArrayInputStream, ByteArrayOutputStream }
 
 /**
  * Test Sequoia Forest training.
