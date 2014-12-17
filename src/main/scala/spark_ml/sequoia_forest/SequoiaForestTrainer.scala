@@ -106,11 +106,13 @@ object SequoiaForestTrainer {
 
     val rng = new Random() // For generating seeds for the bagger.
 
+    val labelIsCategorical: Boolean = treeType == TreeType.Classification_InfoGain
+
     val (maxLabelValue: Double, featureBins: Array[Bins]) = discretizationType match {
       case DiscretizationType.EqualWidth => EqualWidthDiscretizer.discretizeFeatures(
         input,
         categoricalFeatureIndices,
-        labelIsCategorical = true,
+        labelIsCategorical = labelIsCategorical,
         Map[String, String](
           StringConstants.NumBins_Numeric -> maxNumNumericBins.toString,
           StringConstants.MaxCardinality_Categoric -> maxNumCategoricalBins.toString))
@@ -118,7 +120,7 @@ object SequoiaForestTrainer {
       case DiscretizationType.EqualFrequency => EqualFrequencyDiscretizer.discretizeFeatures(
         input,
         categoricalFeatureIndices,
-        labelIsCategorical = true,
+        labelIsCategorical = labelIsCategorical,
         Map[String, String](
           StringConstants.NumBins_Numeric -> maxNumNumericBins.toString,
           StringConstants.SubSampleCount_Numeric -> "50000", // TODO: Using 50000 samples to find numeric bins but should make this configurable.
@@ -129,7 +131,7 @@ object SequoiaForestTrainer {
     }
 
     // If this is classification, the label has to be a non-negative integer.
-    if (treeType == TreeType.Classification_InfoGain && (maxLabelValue < 0.0 || maxLabelValue.toInt.toDouble != maxLabelValue)) {
+    if (labelIsCategorical && (maxLabelValue < 0.0 || maxLabelValue.toInt.toDouble != maxLabelValue)) {
       throw new InvalidCategoricalValueException(maxLabelValue + " is not a valid target class value.")
     }
 
