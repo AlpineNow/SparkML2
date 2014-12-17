@@ -123,7 +123,7 @@ object SequoiaForestTrainer {
         labelIsCategorical = labelIsCategorical,
         Map[String, String](
           StringConstants.NumBins_Numeric -> maxNumNumericBins.toString,
-          StringConstants.SubSampleCount_Numeric -> "50000", // TODO: Using 50000 samples to find numeric bins but should make this configurable.
+          StringConstants.SubSampleCount_Numeric -> "10000", // TODO: Using 10000 samples to find numeric bins but should make this configurable.
           StringConstants.MaxCardinality_Categoric -> maxNumCategoricalBins.toString,
           StringConstants.RandomSeed -> rng.nextInt().toString))
 
