@@ -165,7 +165,7 @@ object SequoiaForestTrainer {
     discretizedBaggedInput.setCheckpointDir(checkpointDir)
     discretizedBaggedInput.setCheckpointInterval(checkpointInterval)
 
-    notifiee.newStatusMessage("Finished transforming the input data into propert training data...")
+    notifiee.newStatusMessage("Finished transforming the input data into proper training data...")
 
     // Determine certain parameters automatically.
     val numFeatures = featureBins.length
