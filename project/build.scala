@@ -45,7 +45,9 @@ object spark_ml extends Build {
       "-deprecation"
     ),
 
-    libraryDependencies ++= sharedLibraryDependencies
+    libraryDependencies ++= sharedLibraryDependencies,
+    fork := true,
+    fork in Test := true
   ) ++ scalariformSettings ++ ScalastylePlugin.Settings ++ assemblySettings ++ extraAssemblySettings
 
   def buildSettings =
