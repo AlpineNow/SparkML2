@@ -20,6 +20,7 @@ package spark_ml.sequoia_forest
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
+import java.net.URI
 
 import spire.implicits._
 
@@ -130,7 +131,7 @@ abstract class FSForestStorage extends ForestStorage {
  * This stores the trees in an HDFS directory.
  */
 class HDFSForestStorage(hadoopConf: Configuration, path: String) extends FSForestStorage {
-  private val hdfs = FileSystem.get(hadoopConf)
+  private val hdfs = FileSystem.get(URI.create(path), hadoopConf)
   forestPath = path
 
   /**
