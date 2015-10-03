@@ -17,33 +17,20 @@
 
 package spark_ml.util
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.scalatest.{BeforeAndAfterAll, Suite}
+import org.scalatest.Assertions._
+import spark_ml.discretization.NumericBins
 
-/**
- * Start a local spark context for unit testing.
- */
-trait LocalSparkContext extends BeforeAndAfterAll { self: Suite =>
-  @transient var sc: SparkContext = _
-
-  override def beforeAll() {
-    super.beforeAll()
-    Thread.sleep(100L)
-    val conf = new SparkConf()
-      .setMaster("local[3]")
-      .setAppName("test")
-    sc = new SparkContext(conf)
-  }
-
-  override def afterAll() {
-    if (sc != null) {
-      sc.stop()
-      sc = null
+object BinsTestUtil {
+  def validateNumericalBins(
+    bins: NumericBins,
+    boundaries: Array[(Double, Double)],
+    missingBinId: Option[Int]): Unit = {
+    assert(bins.getCardinality === (boundaries.length + (if (missingBinId.isDefined) 1 else 0)))
+    assert(bins.missingValueBinIdx === missingBinId)
+    bins.bins.zip(boundaries).foreach {
+      case (numericBin, (l, r)) =>
+        assert(numericBin.lower === l)
+        assert(numericBin.upper === r)
     }
-    super.afterAll()
-  }
-
-  def numbersAreEqual(x: Double, y: Double, tol: Double = 1E-3): Boolean = {
-    math.abs(x - y) / (math.abs(y) + 1e-15) < tol
   }
 }

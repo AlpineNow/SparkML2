@@ -17,33 +17,26 @@
 
 package spark_ml.util
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.scalatest.{BeforeAndAfterAll, Suite}
-
 /**
- * Start a local spark context for unit testing.
+ * Some math functions that don't give NaN's for edge cases (e.g. log of 0's) or
+ * too large/small numbers of exp's.
+ * These are used for loss function calculations.
  */
-trait LocalSparkContext extends BeforeAndAfterAll { self: Suite =>
-  @transient var sc: SparkContext = _
+object RobustMath {
+  private val minExponent = -19.0
+  private val maxExponent = 19.0
+  private val expPredLowerLimit = math.exp(minExponent)
+  private val expPredUpperLimit = math.exp(maxExponent)
 
-  override def beforeAll() {
-    super.beforeAll()
-    Thread.sleep(100L)
-    val conf = new SparkConf()
-      .setMaster("local[3]")
-      .setAppName("test")
-    sc = new SparkContext(conf)
-  }
-
-  override def afterAll() {
-    if (sc != null) {
-      sc.stop()
-      sc = null
+  def log(value: Double): Double = {
+    if (value == 0.0) {
+      minExponent
+    } else {
+      math.min(math.max(math.log(value), minExponent), maxExponent)
     }
-    super.afterAll()
   }
 
-  def numbersAreEqual(x: Double, y: Double, tol: Double = 1E-3): Boolean = {
-    math.abs(x - y) / (math.abs(y) + 1e-15) < tol
+  def exp(value: Double): Double = {
+    math.min(math.max(math.exp(value), expPredLowerLimit), expPredUpperLimit)
   }
 }

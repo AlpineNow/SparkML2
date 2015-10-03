@@ -15,35 +15,25 @@
  * limitations under the License.
  */
 
-package spark_ml.util
+package spark_ml.gradient_boosting.loss.defaults
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.scalatest.{BeforeAndAfterAll, Suite}
+import spark_ml.gradient_boosting.loss.LossFunction
 
 /**
- * Start a local spark context for unit testing.
+ * The AdaBoost loss function. This is used for binary classifications.
+ * Gradient boosting's AdaBoost is an approximation of the original AdaBoosting
+ * in that the exponential loss is reduced through gradient steps (original
+ * AdaBoost has a different optimization routine).
  */
-trait LocalSparkContext extends BeforeAndAfterAll { self: Suite =>
-  @transient var sc: SparkContext = _
+class AdaBoostLossFunction extends LossFunction {
+  private val eps = 1e-15
 
-  override def beforeAll() {
-    super.beforeAll()
-    Thread.sleep(100L)
-    val conf = new SparkConf()
-      .setMaster("local[3]")
-      .setAppName("test")
-    sc = new SparkContext(conf)
-  }
+  def lossFunctionName = "AdaBoost(Exponential)"
+  def createAggregator = new AdaBoostLossAggregator
+  def getLabelCardinality: Option[Int] = Some(2)
+  def canRefineNodeEstimate: Boolean = true
 
-  override def afterAll() {
-    if (sc != null) {
-      sc.stop()
-      sc = null
-    }
-    super.afterAll()
-  }
-
-  def numbersAreEqual(x: Double, y: Double, tol: Double = 1E-3): Boolean = {
-    math.abs(x - y) / (math.abs(y) + 1e-15) < tol
+  def applyMeanFunction(rawPred: Double): Double = {
+    math.min(math.max(1.0 / (1.0 + math.exp(-2.0 * rawPred)), eps), 1.0 - eps)
   }
 }

@@ -15,35 +15,18 @@
  * limitations under the License.
  */
 
-package spark_ml.util
+package spark_ml.gradient_boosting.loss.defaults
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.scalatest.{BeforeAndAfterAll, Suite}
+import spark_ml.gradient_boosting.loss.LossFunction
 
 /**
- * Start a local spark context for unit testing.
+ * The Laplacian loss function.
  */
-trait LocalSparkContext extends BeforeAndAfterAll { self: Suite =>
-  @transient var sc: SparkContext = _
+class LaplacianLossFunction extends LossFunction {
+  def lossFunctionName = "Laplacian"
+  def createAggregator = new LaplacianLossAggregator
+  def getLabelCardinality: Option[Int] = None
+  def canRefineNodeEstimate: Boolean = true
 
-  override def beforeAll() {
-    super.beforeAll()
-    Thread.sleep(100L)
-    val conf = new SparkConf()
-      .setMaster("local[3]")
-      .setAppName("test")
-    sc = new SparkContext(conf)
-  }
-
-  override def afterAll() {
-    if (sc != null) {
-      sc.stop()
-      sc = null
-    }
-    super.afterAll()
-  }
-
-  def numbersAreEqual(x: Double, y: Double, tol: Double = 1E-3): Boolean = {
-    math.abs(x - y) / (math.abs(y) + 1e-15) < tol
-  }
+  def applyMeanFunction(rawPred: Double): Double = rawPred
 }
