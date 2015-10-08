@@ -29,9 +29,9 @@
         <scala.version>2.10.4</scala.version>
         <scala.binary.version>2.10</scala.binary.version>
         <java.version>1.7</java.version>
-        <PermGen>64m</PermGen>
-        <MaxPermGen>512m</MaxPermGen>
-        <CodeCacheSize>512m</CodeCacheSize>
+        <PermGen>1024m</PermGen>
+        <MaxPermGen>1024m</MaxPermGen>
+        <CodeCacheSize>1024m</CodeCacheSize>
         <!-- github server corresponds to entry in ~/.m2/settings.xml -->
         <github.global.server>github</github.global.server>
     </properties>
@@ -136,7 +136,7 @@
                     <maxmem>1024m</maxmem>
                     <fork>true</fork>
                     <compilerArgs>
-                        <arg>-Xlint:all,-serial,-path</arg>
+                        <arg>-Xlint:all,-serial,-path,-XX:MaxPermSize=256m</arg>
                     </compilerArgs>
                 </configuration>
             </plugin>
@@ -226,6 +226,7 @@
                     <reportsDirectory>${project.build.directory}/surefire-reports</reportsDirectory>
                     <junitxml>.</junitxml>
                     <filereports>WDF TestSuite.txt</filereports>
+                    <argLine>-XX:PermSize=${PermGen}</argLine>
                 </configuration>
                 <executions>
                     <execution>
