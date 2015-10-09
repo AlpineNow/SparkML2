@@ -3,10 +3,10 @@
   <groupId>com.alpine</groupId>
   <artifactId>spark_ml_2.10</artifactId>
   <versioning>
-    <release>0.9.9.9.4</release>
+    <release>0.9.9.9.5</release>
     <versions>
-      <version>0.9.9.9.4</version>
+      <version>0.9.9.9.5</version>
     </versions>
-    <lastUpdated>20151009074311</lastUpdated>
+    <lastUpdated>20151009082036</lastUpdated>
   </versioning>
 </metadata>
