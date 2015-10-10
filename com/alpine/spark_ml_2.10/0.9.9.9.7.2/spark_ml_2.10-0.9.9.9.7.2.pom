@@ -5,7 +5,7 @@
 
     <groupId>com.alpine</groupId>
     <artifactId>spark_ml_2.10</artifactId>
-    <version>0.9.9.9.7.1</version>
+    <version>0.9.9.9.7.2</version>
     <packaging>jar</packaging>
     <name>Alpine's Spark ML Package</name>
     <licenses>
