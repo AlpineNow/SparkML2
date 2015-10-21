@@ -4,8 +4,8 @@
   <artifactId>spark_ml_2.10</artifactId>
   <versioning>
     <versions>
-      <version>0.9.9.9.9.9.4-SNAPSHOT</version>
+      <version>0.9.9.9.9.9.6-SNAPSHOT</version>
     </versions>
-    <lastUpdated>20151020210754</lastUpdated>
+    <lastUpdated>20151021224606</lastUpdated>
   </versioning>
 </metadata>
