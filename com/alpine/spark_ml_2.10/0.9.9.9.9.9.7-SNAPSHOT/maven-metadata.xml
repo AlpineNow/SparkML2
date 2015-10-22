@@ -2,29 +2,29 @@
 <metadata modelVersion="1.1.0">
   <groupId>com.alpine</groupId>
   <artifactId>spark_ml_2.10</artifactId>
-  <version>0.9.9.9.9.9.6-SNAPSHOT</version>
+  <version>0.9.9.9.9.9.7-SNAPSHOT</version>
   <versioning>
     <snapshot>
-      <timestamp>20151021.224606</timestamp>
+      <timestamp>20151022.225710</timestamp>
       <buildNumber>1</buildNumber>
     </snapshot>
-    <lastUpdated>20151021224606</lastUpdated>
+    <lastUpdated>20151022225710</lastUpdated>
     <snapshotVersions>
       <snapshotVersion>
         <extension>jar</extension>
-        <value>0.9.9.9.9.9.6-20151021.224606-1</value>
-        <updated>20151021224606</updated>
+        <value>0.9.9.9.9.9.7-20151022.225710-1</value>
+        <updated>20151022225710</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>pom</extension>
-        <value>0.9.9.9.9.9.6-20151021.224606-1</value>
-        <updated>20151021224606</updated>
+        <value>0.9.9.9.9.9.7-20151022.225710-1</value>
+        <updated>20151022225710</updated>
       </snapshotVersion>
       <snapshotVersion>
         <classifier>javadoc</classifier>
         <extension>jar</extension>
-        <value>0.9.9.9.9.9.6-20151021.224606-1</value>
-        <updated>20151021224606</updated>
+        <value>0.9.9.9.9.9.7-20151022.225710-1</value>
+        <updated>20151022225710</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>
