@@ -15,35 +15,26 @@
  * limitations under the License.
  */
 
-package spark_ml.util
-
-import org.apache.spark.{SparkConf, SparkContext}
-import org.scalatest.{BeforeAndAfterAll, Suite}
+package spark_ml.tree_ensembles
 
 /**
- * Start a local spark context for unit testing.
+ * Tree ensemble writer.
  */
-trait LocalSparkContext extends BeforeAndAfterAll { self: Suite =>
-  @transient var sc: SparkContext = _
+trait TreeEnsembleWriter {
+  /**
+   * Write node info.
+   * @param nodeInfo Node info to write.
+   */
+  def writeNodeInfo(nodeInfo: NodeInfo): Unit
+}
 
-  override def beforeAll() {
-    super.beforeAll()
-    Thread.sleep(100L)
-    val conf = new SparkConf()
-      .setMaster("local[3]")
-      .setAppName("test")
-    sc = new SparkContext(conf)
-  }
-
-  override def afterAll() {
-    if (sc != null) {
-      sc.stop()
-      sc = null
-    }
-    super.afterAll()
-  }
-
-  def numbersAreEqual(x: Double, y: Double, tol: Double = 1E-3): Boolean = {
-    math.abs(x - y) / (math.abs(y) + 1e-15) < tol
-  }
+/**
+ * Tree ensemble store.
+ */
+trait TreeEnsembleStore {
+  /**
+   * Get a tree ensemble writer.
+   * @return A tree ensemble writer.
+   */
+  def getWriter: TreeEnsembleWriter
 }

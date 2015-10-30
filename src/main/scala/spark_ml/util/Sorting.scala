@@ -59,6 +59,18 @@ object Sorting {
   /** Quickly sort an array of Floats. */
   def quickSort(a: Array[Float]) { sort1(a, 0, a.length) }
 
+  /** Quickly sort an array of Doubles with a custom length. */
+  def quickSort(a: Array[Double], len: Int) { sort1(a, 0, len) }
+
+  /** Quickly sort an array of items with an implicit Ordering with a custom length. */
+  def quickSort[K: Ordering](a: Array[K], len: Int) { sort1(a, 0, len) }
+
+  /** Quickly sort an array of Ints with a custom length. */
+  def quickSort(a: Array[Int], len: Int) { sort1(a, 0, len) }
+
+  /** Quickly sort an array of Floats with a custom length. */
+  def quickSort(a: Array[Float], len: Int) { sort1(a, 0, len) }
+
   /**
    * Sort an array of K where K is Ordered, preserving the existing order
    * where the values are equal.

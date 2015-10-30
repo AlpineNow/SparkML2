@@ -15,35 +15,23 @@
  * limitations under the License.
  */
 
-package spark_ml.util
+package spark_ml.gradient_boosting.loss.defaults
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.scalatest.{BeforeAndAfterAll, Suite}
+import spark_ml.gradient_boosting.loss.LossFunction
 
 /**
- * Start a local spark context for unit testing.
+ * The poisson loss function.
  */
-trait LocalSparkContext extends BeforeAndAfterAll { self: Suite =>
-  @transient var sc: SparkContext = _
+class PoissonLossFunction extends LossFunction {
+  private val expPredLowerLimit = math.exp(-19.0)
+  private val expPredUpperLimit = math.exp(19.0)
 
-  override def beforeAll() {
-    super.beforeAll()
-    Thread.sleep(100L)
-    val conf = new SparkConf()
-      .setMaster("local[3]")
-      .setAppName("test")
-    sc = new SparkContext(conf)
-  }
+  def lossFunctionName = "Poisson"
+  def createAggregator = new PoissonLossAggregator
+  def getLabelCardinality: Option[Int] = None
+  def canRefineNodeEstimate: Boolean = true
 
-  override def afterAll() {
-    if (sc != null) {
-      sc.stop()
-      sc = null
-    }
-    super.afterAll()
-  }
-
-  def numbersAreEqual(x: Double, y: Double, tol: Double = 1E-3): Boolean = {
-    math.abs(x - y) / (math.abs(y) + 1e-15) < tol
+  def applyMeanFunction(rawPred: Double): Double = {
+    math.min(math.max(math.exp(rawPred), expPredLowerLimit), expPredUpperLimit)
   }
 }

@@ -17,33 +17,38 @@
 
 package spark_ml.util
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.scalatest.{BeforeAndAfterAll, Suite}
+import java.io.Serializable
+import java.util.Calendar
 
 /**
- * Start a local spark context for unit testing.
+ * An object to funnel progress reports to.
  */
-trait LocalSparkContext extends BeforeAndAfterAll { self: Suite =>
-  @transient var sc: SparkContext = _
+trait ProgressNotifiee extends Serializable {
+  def newProgressMessage(progress: String): Unit
+  def newStatusMessage(status: String): Unit
+  def newErrorMessage(error: String): Unit
+}
 
-  override def beforeAll() {
-    super.beforeAll()
-    Thread.sleep(100L)
-    val conf = new SparkConf()
-      .setMaster("local[3]")
-      .setAppName("test")
-    sc = new SparkContext(conf)
+/**
+ * Simple console notifiee.
+ * Prints messages to stdout.
+ */
+class ConsoleNotifiee extends ProgressNotifiee {
+  def newProgressMessage(progress: String): Unit = {
+    println(
+      "[Progress] [" + Calendar.getInstance().getTime.toString + "] " + progress
+    )
   }
 
-  override def afterAll() {
-    if (sc != null) {
-      sc.stop()
-      sc = null
-    }
-    super.afterAll()
+  def newStatusMessage(status: String): Unit = {
+    println(
+      "[Status] [" + Calendar.getInstance().getTime.toString + "] " + status
+    )
   }
 
-  def numbersAreEqual(x: Double, y: Double, tol: Double = 1E-3): Boolean = {
-    math.abs(x - y) / (math.abs(y) + 1e-15) < tol
+  def newErrorMessage(error: String): Unit = {
+    println(
+      "[Error] [" + Calendar.getInstance().getTime.toString + "] " + error
+    )
   }
 }

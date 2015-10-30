@@ -17,86 +17,75 @@
 
 package spark_ml.transformation
 
-import spire.implicits._
 import scala.collection.mutable
-import org.apache.spark.rdd.RDD
+
+import org.apache.spark.sql.DataFrame
 
 object DistinctValueCounter {
-  /*
-   * Get distinct values for selected columns of a tabular text data (e.g. csv/tsv/etc.)
-   * Besides an RDD of String, it takes an array of column indices as an input and
-   * sets of distinct values per column index as an output.
+  /**
+   * Get distinct values of categorical columns from the given data frame.
+   * @param dataFrame Data frame from whose columns we want to gather distinct
+   *                  values from.
+   * @param catColIndices Categorical column indices.
+   * @param maxCardinality The maximum number of unique values per column.
+   * @return A map of column index and distinct value sets.
    */
   def getDistinctValues(
-    data: RDD[String],
-    delimiter: String,
-    headerExistsInRDD: Boolean,
-    colIndices: Array[Int]): mutable.Map[Int, mutable.Set[String]] = {
+    dataFrame: DataFrame,
+    catColIndices: Set[Int],
+    maxCardinality: Int): Map[Int, mutable.Set[String]] = {
+    dataFrame.mapPartitions(
+      rowItr => {
+        val distinctVals = mutable.Map[Int, mutable.Set[String]]()
+        while (rowItr.hasNext) {
+          val row = rowItr.next()
+          row.toSeq.zipWithIndex.map {
+            case (colVal, colIdx) =>
+              if (catColIndices.contains(colIdx)) {
+                val colDistinctVals = distinctVals.getOrElseUpdate(colIdx, mutable.Set[String]())
 
-    // For each mapper, we generate a set of distinct values per column and
-    // at the end we reduce multiple sets of distinct values per column into a single set per column.
-    data.mapPartitionsWithIndex((partitionIdx: Int, lines: Iterator[String]) => {
-      val distinctValsPerCol: mutable.Map[Int, mutable.Set[String]] = mutable.Map[Int, mutable.Set[String]]()
-      cfor(0)(_ < colIndices.length, _ + 1)(
-        i => distinctValsPerCol.put(colIndices(i), mutable.Set[String]())
-      )
-
-      // Drop the first line of the first partition if there's a header.
-      if (headerExistsInRDD && partitionIdx == 0) {
-        lines.drop(1)
-      }
-
-      lines.foreach((line: String) => {
-        val lineElems = line.split(delimiter, -1)
-        cfor(0)(_ < colIndices.length, _ + 1)(
-          i => {
-            val colVal = lineElems(colIndices(i)).trim
-
-            // Even empty strings are treated as a unique value.
-            distinctValsPerCol(colIndices(i)).add(colVal)
+                // We don't care to count all the unique values if the distinct
+                // count goes over the given limit.
+                if (colDistinctVals.size <= maxCardinality) {
+                  val nonNullColVal =
+                    if (colVal == null) {
+                      ""
+                    } else {
+                      colVal.toString
+                    }
+                  colDistinctVals.add(nonNullColVal)
+                }
+              }
           }
-        )
-      })
-
-      Array[mutable.Map[Int, mutable.Set[String]]](distinctValsPerCol).toIterator
-    }).reduce((m1: mutable.Map[Int, mutable.Set[String]], m2: mutable.Map[Int, mutable.Set[String]]) => {
-      m2.keys.foreach((idx: Int) => {
-        if (!m1.contains(idx)) {
-          m1.put(idx, mutable.Set[String]())
         }
 
-        m1(idx) ++= m2(idx)
-      })
-
-      m1
-    })
+        distinctVals.toIterator
+      }
+    ).reduceByKey {
+      (colDistinctVals1, colDistinctVals2) =>
+        (colDistinctVals1 ++ colDistinctVals2).splitAt(maxCardinality + 1)._1
+    }.collect().toMap
   }
 
   /**
    * Map a set of distinct values to an increasing non-negative numbers.
    * E.g., {'Women' -> 0, 'Men' -> 1}, etc.
-   * @param distinctValues A set of distinct values for different columns (first key is index to a column).
-   * @param leaveEmptyString Leave empty strings out (do not map them to numbers).
-   * @return A map of distinct values to integers for different columns (first key is index to a column).
+   * @param distinctValues A set of distinct values for different columns (first
+   *                       key is index to a column).
+   * @param useEmptyString Whether an empty string should be used as a distinct
+   *                       value.
+   * @return A map of distinct values to integers for different columns (first
+   *         key is index to a column).
    */
   def mapDistinctValuesToIntegers(
-    distinctValues: mutable.Map[Int, mutable.Set[String]],
-    leaveEmptyString: Boolean): mutable.Map[Int, mutable.Map[String, Int]] = {
-    val distinctValMapsToInts = mutable.Map[Int, mutable.Map[String, Int]]()
-    distinctValues.foreach(index_values => {
-      val index = index_values._1
-      val values = index_values._2
-      val mapsToInts = mutable.Map[String, Int]()
-      distinctValMapsToInts.put(index, mapsToInts)
-      var intVal = 0
-      values.foreach(value => {
-        if (!(value == "" && leaveEmptyString)) {
-          mapsToInts.put(value, intVal)
-          intVal += 1
-        }
-      })
-    })
-
-    distinctValMapsToInts
+    distinctValues: Map[Int, mutable.Set[String]],
+    useEmptyString: Boolean
+  ): Map[Int, Map[String, java.lang.Integer]] = {
+    distinctValues.map {
+      case (colIndex, values) =>
+        colIndex -> values.filter(value => !(value == "" && !useEmptyString)).zipWithIndex.map {
+          case (value, mappedVal) => value -> new java.lang.Integer(mappedVal)
+        }.toMap
+    }
   }
 }

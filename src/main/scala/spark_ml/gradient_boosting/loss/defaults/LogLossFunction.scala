@@ -15,35 +15,23 @@
  * limitations under the License.
  */
 
-package spark_ml.util
+package spark_ml.gradient_boosting.loss.defaults
 
-import org.apache.spark.{SparkConf, SparkContext}
-import org.scalatest.{BeforeAndAfterAll, Suite}
+import spark_ml.gradient_boosting.loss.LossFunction
 
 /**
- * Start a local spark context for unit testing.
+ * The LogLoss loss function (also known as cross-entropy). This is equivalent
+ * to a logistic regression.
  */
-trait LocalSparkContext extends BeforeAndAfterAll { self: Suite =>
-  @transient var sc: SparkContext = _
+class LogLossFunction extends LossFunction {
+  private val eps = 1e-15
 
-  override def beforeAll() {
-    super.beforeAll()
-    Thread.sleep(100L)
-    val conf = new SparkConf()
-      .setMaster("local[3]")
-      .setAppName("test")
-    sc = new SparkContext(conf)
-  }
+  def lossFunctionName = "LogLoss(LogisticRegression)"
+  def createAggregator = new LogLossAggregator
+  def getLabelCardinality: Option[Int] = Some(2)
+  def canRefineNodeEstimate: Boolean = true
 
-  override def afterAll() {
-    if (sc != null) {
-      sc.stop()
-      sc = null
-    }
-    super.afterAll()
-  }
-
-  def numbersAreEqual(x: Double, y: Double, tol: Double = 1E-3): Boolean = {
-    math.abs(x - y) / (math.abs(y) + 1e-15) < tol
+  def applyMeanFunction(rawPred: Double): Double = {
+    math.min(math.max(1.0 / (1.0 + math.exp(-rawPred)), eps), 1.0 - eps)
   }
 }
