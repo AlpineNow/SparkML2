@@ -36,7 +36,7 @@ case class RandomForest(
   splitCriteriaStr: String,
   sortedVarImportance: Seq[(String, java.lang.Double)],
   sampleCounts: Array[Long]
-) {
+) extends Model {
   /**
    * Predict from the features.
    * @param features A double array of features.

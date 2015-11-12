@@ -17,8 +17,6 @@
 
 package spark_ml.gradient_boosting
 
-import com.databricks.spark.csv._
-import org.apache.spark.sql.SQLContext
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.{SparkConf, SparkContext}
 import scopt.OptionParser
@@ -26,19 +24,9 @@ import spark_ml.discretization.{CardinalityOverLimitException, DiscType, Discret
 import spark_ml.gradient_boosting.loss.LossFunction
 import spark_ml.gradient_boosting.loss.defaults.GaussianLossFunction
 import spark_ml.model.gb.{GradientBoostedTrees, GradientBoostedTreesFactory, GradientBoostedTreesFactoryDefault}
-import spark_ml.transformation.{ColumnTransformer, DataTransformationUtils, DistinctValueCounter}
+import spark_ml.transformation.{DataTransformationUtils, StorageFormat}
 import spark_ml.tree_ensembles.CatSplitType
 import spark_ml.util.{BaggingType, ConsoleNotifiee, ProgressNotifiee}
-
-/**
- * The storage format for the input dataset.
- */
-object StorageFormat extends Enumeration {
-  type StorageFormat = Value
-  val DelimitedText = Value(0)
-  val Parquet = Value(1)
-  val Avro = Value(2)
-}
 
 /**
  * Delimited file config options.
@@ -93,7 +81,7 @@ case class GradientBoostingRunnerConfig(
       catSplitType = CatSplitType.OrderedBinarySplit,
       baggingRate = 0.5,
       baggingType = BaggingType.WithoutReplacement,
-      shrinkage = 0.001,
+      shrinkage = 0.01,
       fineTuneTerminalNodes = true,
       checkpointDir = None,
       predCheckpointInterval = 5,
@@ -308,121 +296,22 @@ object GradientBoostingRunner {
     val fracTraining = config.fracTraining
 
     try {
-      // Load the data through Spark's SQLContext.
-      val sqlContext = new SQLContext(sc)
-
-      notifiee.newStatusMessage("Loading the inputPath " + inputPath)
-      val loadedDf = config.inputFormat match {
-        case StorageFormat.DelimitedText =>
-          val parser =
-            new CsvParser()
-              .withUseHeader(delimitedTextConfig.headerExists)
-              .withDelimiter(delimitedTextConfig.delimiter(0))
-              .withQuoteChar(delimitedTextConfig.quoteStr(0))
-              .withEscape(delimitedTextConfig.escapeStr(0))
-
-          (
-            inputSchema match {
-              case Some(structType) => parser.withSchema(structType)
-              case None => parser.withInferSchema(true)
-            }
-          ).csvFile(sqlContext, inputPath)
-
-        case StorageFormat.Avro => sqlContext.load(inputPath, "com.databricks.spark.avro")
-        case StorageFormat.Parquet => sqlContext.load(inputPath)
-      }
-
-      val dataFrame = config.repartitionSize match {
-        case Some(numParts) =>
-          if (config.gbOpts.checkpointDir.isDefined) {
-            val repartitioned = loadedDf.repartition(numParts)
-            repartitioned.rdd.sparkContext.setCheckpointDir(config.gbOpts.checkpointDir.get)
-            repartitioned.rdd.checkpoint()
-            repartitioned
-          } else {
-            loadedDf
-          }
-        case None => loadedDf
-      }
-
-      if (config.gbOpts.verbose) {
-        notifiee.newStatusMessage("The dataset " + inputPath + " was successfully loaded.")
-        notifiee.newStatusMessage("There are " + dataFrame.count() + " rows.")
-        notifiee.newStatusMessage("There are " + dataFrame.columns.length + " columns.")
-      }
-
-      notifiee.newStatusMessage("Successfully loaded the dataset.")
-
-      // Get the columns.
-      val columns = dataFrame.columns
-      val numCols = columns.length
-
-      notifiee.newStatusMessage("Finding distinct values for categorical features.")
-
-      // Get distinct categorical values.
-      val catDistinctVals = DistinctValueCounter.getDistinctValues(
-        dataFrame,
-        catColIndices,
-        maxCatCardinality
-      )
-
-      notifiee.newStatusMessage("Found distinct values for categorical features.")
-
-      // Compute the cardinalities of each categorical column.
-      val catColCardinalities =
-        sortedCatColIndices.map(colIdx => colIdx -> catDistinctVals(colIdx).size).toMap
-
-      // See if any categorical column has a cardinality that larger than
-      // the maximum. If so, see if feature hashing is allowed. Otherwise,
-      // we'll simply throw an exception.
-      catColCardinalities.foreach {
-        case (idx, cardinality) =>
-          if (cardinality > maxCatCardinality && !useFeatureHashingForCat) {
-            throw CardinalityOverLimitException(
-              "The categorical column " + columns(idx) + " has a cardinality of " +
-              cardinality.toString + " that is higher than the limit " + maxCatCardinality.toString +
-              ". Use the feature hashing option if you want to use this as a feature."
-            )
-          }
-      }
-
-      // Map unique strings to numbers.
-      val catDistinctValToInt = DistinctValueCounter.mapDistinctValuesToIntegers(
-        catDistinctVals,
-        useEmptyString = true
-      )
-
-      if (config.gbOpts.verbose) {
-        notifiee.newStatusMessage("The categorical columns are : ")
-        notifiee.newStatusMessage(catColIndices.map(columns(_)).mkString(" "))
-        notifiee.newStatusMessage("The maximum allowed cardinality is " + maxCatCardinality)
-        catDistinctValToInt.foreach {
-          case (key, distinctValCounts) =>
-            notifiee.newStatusMessage(columns(key) + " has " + distinctValCounts.size + " unique values : ")
-            if (distinctValCounts.size > maxCatCardinality) {
-              notifiee.newStatusMessage(columns(key) + "'s distinct value count exceed the limit.")
-            } else {
-              notifiee.newStatusMessage(
-                distinctValCounts.map {
-                  case (distinctVal, mappedInt) => distinctVal + "->" + mappedInt.toString
-                }.mkString(",")
-              )
-            }
-        }
-      }
-
-      notifiee.newStatusMessage("Transforming the dataset into an RDD of label, feature-vector pairs.")
-
-      // Now convert the data set into a form usable by the algorithm.
-      // It'll be a pair of a label and a feature vector.
-      val (labelFeatureRdd, (labelTransformer, featureTransformers)) =
-        DataTransformationUtils.transformDataFrameToLabelFeatureRdd(
-          dataFrame,
-          labelColIndex,
-          catDistinctValToInt,
-          colsToIgnoreIndices,
-          maxCatCardinality,
-          useFeatureHashingForCat
+      val (labelFeatureRdd, labelTransformer, featureTransformers, labelName, featureNames, catFeatureIndices) =
+        DataTransformationUtils.loadDataFileAndGetLabelFeatureRdd(
+          filePath = inputPath,
+          sc = sc,
+          dataSchema = inputSchema,
+          storageFormat = config.inputFormat,
+          repartitionSize = config.repartitionSize,
+          delimitedTextFileConfig = delimitedTextConfig,
+          maxCatCardinality = maxCatCardinality,
+          useFeatureHashingForCat = useFeatureHashingForCat,
+          catColIndices = catColIndices,
+          colsToIgnoreIndices = colsToIgnoreIndices,
+          labelColIndex = labelColIndex,
+          checkpointDir = config.gbOpts.checkpointDir,
+          notifiee = notifiee,
+          verbose = config.gbOpts.verbose
         )
 
       // Remember the transformers for the final model.
@@ -431,63 +320,15 @@ object GradientBoostingRunner {
         featureTransformers = featureTransformers
       )
 
-      // Map categorical column indices to categorical feature indices.
-      // Feature indices exclude the label column and the columns to ignore.
-      val (featureNames, catFeatureIndices, _) =
-        (0 to (numCols - 1)).foldLeft((Seq[String](), Set[Int](), 0)) {
-          case ((featNames, catFeatIndices, curFeatIdx), curColIdx) =>
-            curColIdx match {
-              case _ if labelColIndex == curColIdx || colsToIgnoreIndices.contains(curColIdx) => (featNames, catFeatIndices, curFeatIdx)
-              case _ if catColIndices.contains(curColIdx) => (featNames ++ Seq(columns(curColIdx)), catFeatIndices + curFeatIdx, curFeatIdx + 1)
-              case _ => (featNames ++ Seq(columns(curColIdx)), catFeatIndices, curFeatIdx + 1)
-            }
-        }
-
       // Set column names and types for the final model creator.
       gbtFactory.setColumnNamesAndTypes(
-        labelName = columns(labelColIndex),
+        labelName = labelName,
         labelIsCat = catColIndices.contains(labelColIndex),
         featureNames = featureNames.toArray,
         featureIsCat = featureNames.zipWithIndex.map {
           case (featName, featIdx) => catFeatureIndices.contains(featIdx)
         }.toArray
       )
-
-      if (config.gbOpts.verbose) {
-        // Transformed features.
-        val labelFeatureRddSample = labelFeatureRdd.take(50)
-
-        notifiee.newStatusMessage("Transformed column names are :")
-        notifiee.newStatusMessage(columns(labelColIndex) + ", (" + featureNames.mkString(",") + ")")
-        notifiee.newStatusMessage("Categorical features are :")
-        notifiee.newStatusMessage(
-          featureNames.zipWithIndex.filter {
-            case (featName, featIdx) => catFeatureIndices.contains(featIdx)
-          }.mkString(",")
-        )
-        notifiee.newStatusMessage("Transformed label feature samples are :")
-        labelFeatureRddSample.foreach {
-          case (sampleLabel, sampleFeatures) =>
-            notifiee.newStatusMessage(sampleLabel.toString + ", (" + sampleFeatures.mkString(",") + ")")
-        }
-
-        val getColumnTransformerDesc =
-          (columnTransformer: ColumnTransformer) => {
-            if (columnTransformer.distinctValToInt.isDefined) {
-              "CatToIntMapper"
-            } else if (columnTransformer.maxCardinality.isDefined) {
-              "CatHasher"
-            } else {
-              "NumericPassThrough"
-            }
-          }
-
-        notifiee.newStatusMessage("ColumnTransfomer descriptions :")
-        notifiee.newStatusMessage(
-          getColumnTransformerDesc(labelTransformer) + ", (" +
-          featureTransformers.map(getColumnTransformerDesc(_)).mkString(",") + ")"
-        )
-      }
 
       val gbOpts = config.gbOpts
       val discOpts = config.discOpts
@@ -500,7 +341,7 @@ object GradientBoostingRunner {
           GradientBoosting.train_unsignedByte(
             input = labelFeatureRdd,
             fracTraining = fracTraining,
-            columnNames = (columns(labelColIndex), featureNames.toArray),
+            columnNames = (labelName, featureNames.toArray),
             catIndices = catFeatureIndices,
             gbOpts = gbOpts,
             discOpts = discOpts,
@@ -511,7 +352,7 @@ object GradientBoostingRunner {
           GradientBoosting.train_unsignedShort(
             input = labelFeatureRdd,
             fracTraining = fracTraining,
-            columnNames = (columns(labelColIndex), featureNames.toArray),
+            columnNames = (labelName, featureNames.toArray),
             catIndices = catFeatureIndices,
             gbOpts = gbOpts,
             discOpts = discOpts,

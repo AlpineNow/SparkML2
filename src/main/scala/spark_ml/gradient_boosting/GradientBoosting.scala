@@ -266,13 +266,6 @@ object GradientBoosting {
 
     // See that the label is valid for the loss type.
     if (labelCardinality.isDefined) {
-      if (labelSummary.restCount > 0) {
-        throw InvalidLabelException(
-          "The label should have " + labelSummary.expectedCardinality.get +
-          " unique values. However, we found more."
-        )
-      }
-
       var numLabelCatsThatExist = 0
       labelSummary.catCounts.get.foreach {
         cnt => if (cnt > 0L) { numLabelCatsThatExist += 1 }
@@ -280,7 +273,15 @@ object GradientBoosting {
       if (numLabelCatsThatExist < labelCardinality.get) {
         throw InvalidLabelException(
           "The label should have " + labelSummary.expectedCardinality.get +
-          " unique values. However, we only found " + numLabelCatsThatExist
+            " unique values that map to integers between 0 and " +
+            (labelSummary.expectedCardinality.get - 1) + ". However, we only found " + numLabelCatsThatExist + " unique values within the expected range."
+        )
+      }
+
+      if (labelSummary.restCount > 0) {
+        throw InvalidLabelException(
+          "The label should have " + labelSummary.expectedCardinality.get +
+          " unique values. However, we found more."
         )
       }
     } else {

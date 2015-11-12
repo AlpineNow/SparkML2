@@ -17,6 +17,8 @@
 
 package spark_ml.util
 
+import scala.collection.mutable
+import scala.reflect.ClassTag
 import scala.util.Random
 
 import org.apache.spark.rdd.RDD
@@ -35,6 +37,57 @@ object BaggingType extends Enumeration {
  * Bagger.
  */
 object Bagger {
+  /**
+   * Get a bootstrap sample and OOB sample from the given data. The bootstrap
+   * sample with replacement would replicate rows that have been sampled
+   * multiple times.
+   * @param data The dataset RDD that we want to bootstrap from.
+   * @param baggingType Bagging type (either with replacement or without
+   *                    replacement).
+   * @param baggingRate Bagging rate.
+   * @param seed Random seed to use.
+   * @tparam T RDD line type.
+   * @return A pair of a bootstrap sample and whether the rows in the initial
+   *         dataset (data) have been selected or not. The boolean flags are
+   *         used for determining whether rows should be used for computing
+   *         generalization errors.
+   */
+  def getBootstrapSampleAndOOBFlags[T: ClassTag](
+    data: RDD[T],
+    baggingType: BaggingType.BaggingType,
+    baggingRate: Double,
+    seed: Int
+  ): (RDD[T], RDD[Boolean]) = {
+    val sampleCntRdd =
+      getBagRdd(
+        data = data,
+        numSamples = 1,
+        baggingType = baggingType,
+        baggingRate = baggingRate,
+        seed = seed
+      )
+
+    val sampledData = data.zip(sampleCntRdd).mapPartitions {
+      rowItr =>
+        val output = new mutable.ListBuffer[T]()
+        while (rowItr.hasNext) {
+          val (row, sampleCnt) = rowItr.next
+          val sampleCntAsInt = sampleCnt(0).toInt
+          if (sampleCntAsInt > 0) {
+            output ++= mutable.ListBuffer.fill[T](sampleCntAsInt)(row)
+          }
+        }
+
+        output.iterator
+    }
+
+    val oobSampleFlag = sampleCntRdd.map {
+      case sampleCnt => sampleCnt(0) > 0
+    }
+
+    (sampledData, oobSampleFlag)
+  }
+
   /**
    * Create an RDD of bagging info. Each row of the return value is an array of
    * sample counts for a corresponding data row.

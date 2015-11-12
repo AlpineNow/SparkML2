@@ -17,9 +17,24 @@
 
 package spark_ml.transformation
 
+import com.databricks.spark.csv.CsvParser
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.{DataFrame, SQLContext}
 import spark_ml.discretization.CardinalityOverLimitException
+import spark_ml.gradient_boosting.DelimitedTextFileConfig
+import spark_ml.util.ProgressNotifiee
+
+/**
+  * The storage format for the input dataset.
+  */
+object StorageFormat extends Enumeration {
+  type StorageFormat = Value
+  val DelimitedText = Value(0)
+  val Parquet = Value(1)
+  val Avro = Value(2)
+}
 
 /**
  * A class that encodes the transformation to a numeric value for a column.
@@ -65,6 +80,234 @@ case class ColumnTransformer(
 }
 
 object DataTransformationUtils {
+  /**
+   * Load the given data file path and get a labeled dataset RDD with a pair
+   * (label, feature-array).
+   * @param filePath Data file path.
+   * @param sc Spark context.
+   * @param dataSchema Optional input schema for the dataset, if known in
+   *                    advance.
+   * @param storageFormat The data file storage format.
+   * @param repartitionSize Optional repartition size. If this is not None, then
+   *                        the RDD will get repartitioned.
+   * @param delimitedTextFileConfig Delimited text file configuration.
+   * @param maxCatCardinality Maximum categorical column cardinality that's
+   *                          allowed. If the categorical cardinality exceeds
+   *                          this, then feature hashing might get performed,
+   *                          depending on the following option value.
+   * @param useFeatureHashingForCat Whether to convert large-cardinality
+   *                                categorical features through feature hashing.
+   * @param catColIndices Categorical column indices.
+   * @param colsToIgnoreIndices Columns that should be ignored (won't be used
+   *                            for either label or features).
+   * @param labelColIndex Label column index.
+   * @param checkpointDir Checkpoint directory (optional).
+   * @param verbose Whether to be verbose during the load and transform phase.
+   * @return An RDD of pairs (label, feature-array), label-column-transformer,
+   *         feature-column-transformers, label-name, feature-names, and
+   *         categorical feature indices (different from the categorical column
+   *         indices).
+   */
+  def loadDataFileAndGetLabelFeatureRdd(
+    filePath: String,
+    sc: SparkContext,
+    dataSchema: Option[StructType],
+    storageFormat: StorageFormat.StorageFormat,
+    repartitionSize: Option[Int],
+    delimitedTextFileConfig: DelimitedTextFileConfig,
+    maxCatCardinality: Int,
+    useFeatureHashingForCat: Boolean,
+    catColIndices: Set[Int],
+    colsToIgnoreIndices: Set[Int],
+    labelColIndex: Int,
+    checkpointDir: Option[String],
+    notifiee: ProgressNotifiee,
+    verbose: Boolean):
+    (
+      RDD[(Double, Array[Double])],
+      ColumnTransformer,
+      Array[ColumnTransformer],
+      String,
+      Seq[String],
+      Set[Int]
+    ) = {
+    val sortedCatColIndices = catColIndices.toSeq.sorted
+    val sqlContext = new SQLContext(sc)
+
+    notifiee.newStatusMessage("Loading the inputPath " + filePath)
+
+    // First, load the dataset as a dataframe.
+    val loadedDf = storageFormat match {
+      case StorageFormat.DelimitedText =>
+        val parser =
+          new CsvParser()
+            .withUseHeader(delimitedTextFileConfig.headerExists)
+            .withDelimiter(delimitedTextFileConfig.delimiter(0))
+            .withQuoteChar(delimitedTextFileConfig.quoteStr(0))
+            .withEscape(delimitedTextFileConfig.escapeStr(0))
+
+        (
+          dataSchema match {
+            case Some(structType) => parser.withSchema(structType)
+            case None => parser.withInferSchema(true)
+          }
+          ).csvFile(sqlContext, filePath)
+
+      case StorageFormat.Avro => sqlContext.load(filePath, "com.databricks.spark.avro")
+      case StorageFormat.Parquet => sqlContext.load(filePath)
+    }
+
+    val dataFrame = repartitionSize match {
+      case Some(numParts) =>
+        if (checkpointDir.isDefined) {
+          val repartitioned = loadedDf.repartition(numParts)
+          repartitioned.rdd.sparkContext.setCheckpointDir(checkpointDir.get)
+          repartitioned.rdd.checkpoint()
+          repartitioned
+        } else {
+          loadedDf
+        }
+      case None => loadedDf
+    }
+
+    if (verbose) {
+      notifiee.newStatusMessage("The dataset " + filePath + " was successfully loaded.")
+      notifiee.newStatusMessage("There are " + dataFrame.count() + " rows.")
+      notifiee.newStatusMessage("There are " + dataFrame.columns.length + " columns.")
+    }
+
+    notifiee.newStatusMessage("Successfully loaded the dataset.")
+
+    // Get the columns.
+    val columns = dataFrame.columns
+    val numCols = columns.length
+
+    notifiee.newStatusMessage("Finding distinct values for categorical features.")
+
+    // Get distinct categorical values.
+    val catDistinctVals = DistinctValueCounter.getDistinctValues(
+      dataFrame,
+      catColIndices,
+      maxCatCardinality
+    )
+
+    notifiee.newStatusMessage("Found distinct values for categorical features.")
+
+    // Compute the cardinalities of each categorical column.
+    val catColCardinalities =
+      sortedCatColIndices.map(colIdx => colIdx -> catDistinctVals(colIdx).size).toMap
+
+    // See if any categorical column has a cardinality that larger than
+    // the maximum. If so, see if feature hashing is allowed. Otherwise,
+    // we'll simply throw an exception.
+    catColCardinalities.foreach {
+      case (idx, cardinality) =>
+        if (cardinality > maxCatCardinality && !useFeatureHashingForCat) {
+          throw CardinalityOverLimitException(
+            "The categorical column " + columns(idx) + " has a cardinality of " +
+              cardinality.toString + " that is higher than the limit " + maxCatCardinality.toString +
+              ". Use the feature hashing option if you want to use this as a feature."
+          )
+        }
+    }
+
+    // Map unique strings to numbers.
+    val catDistinctValToInt = DistinctValueCounter.mapDistinctValuesToIntegers(
+      catDistinctVals,
+      useEmptyString = true
+    )
+
+    if (verbose) {
+      notifiee.newStatusMessage("The categorical columns are : ")
+      notifiee.newStatusMessage(catColIndices.map(columns(_)).mkString(" "))
+      notifiee.newStatusMessage("The maximum allowed cardinality is " + maxCatCardinality)
+      catDistinctValToInt.foreach {
+        case (key, distinctValCounts) =>
+          notifiee.newStatusMessage(columns(key) + " has " + distinctValCounts.size + " unique values : ")
+          if (distinctValCounts.size > maxCatCardinality) {
+            notifiee.newStatusMessage(columns(key) + "'s distinct value count exceed the limit.")
+          } else {
+            notifiee.newStatusMessage(
+              distinctValCounts.map {
+                case (distinctVal, mappedInt) => distinctVal + "->" + mappedInt.toString
+              }.mkString(",")
+            )
+          }
+      }
+    }
+
+    notifiee.newStatusMessage("Transforming the dataset into an RDD of label, feature-vector pairs.")
+
+    // Now convert the data set into a form usable by the algorithm.
+    // It'll be a pair of a label and a feature vector.
+    val (labelFeatureRdd, (labelTransformer, featureTransformers)) =
+      DataTransformationUtils.transformDataFrameToLabelFeatureRdd(
+        dataFrame,
+        labelColIndex,
+        catDistinctValToInt,
+        colsToIgnoreIndices,
+        maxCatCardinality,
+        useFeatureHashingForCat
+      )
+
+    // Map categorical column indices to categorical feature indices.
+    // Feature indices exclude the label column and the columns to ignore.
+    val (featureNames, catFeatureIndices, _) =
+      (0 to (numCols - 1)).foldLeft((Seq[String](), Set[Int](), 0)) {
+        case ((featNames, catFeatIndices, curFeatIdx), curColIdx) =>
+          curColIdx match {
+            case _ if labelColIndex == curColIdx || colsToIgnoreIndices.contains(curColIdx) => (featNames, catFeatIndices, curFeatIdx)
+            case _ if catColIndices.contains(curColIdx) => (featNames ++ Seq(columns(curColIdx)), catFeatIndices + curFeatIdx, curFeatIdx + 1)
+            case _ => (featNames ++ Seq(columns(curColIdx)), catFeatIndices, curFeatIdx + 1)
+          }
+      }
+
+    if (verbose) {
+      // Transformed features.
+      val labelFeatureRddSample = labelFeatureRdd.take(50)
+
+      notifiee.newStatusMessage("Transformed column names are :")
+      notifiee.newStatusMessage(columns(labelColIndex) + ", (" + featureNames.mkString(",") + ")")
+      notifiee.newStatusMessage("Categorical features are :")
+      notifiee.newStatusMessage(
+        featureNames.zipWithIndex.filter {
+          case (featName, featIdx) => catFeatureIndices.contains(featIdx)
+        }.mkString(",")
+      )
+      notifiee.newStatusMessage("Transformed label feature samples are :")
+      labelFeatureRddSample.foreach {
+        case (sampleLabel, sampleFeatures) =>
+          notifiee.newStatusMessage(sampleLabel.toString + ", (" + sampleFeatures.mkString(",") + ")")
+      }
+
+      val getColumnTransformerDesc =
+        (columnTransformer: ColumnTransformer) => {
+          if (columnTransformer.distinctValToInt.isDefined) {
+            "CatToIntMapper"
+          } else if (columnTransformer.maxCardinality.isDefined) {
+            "CatHasher"
+          } else {
+            "NumericPassThrough"
+          }
+        }
+
+      notifiee.newStatusMessage("ColumnTransfomer descriptions :")
+      notifiee.newStatusMessage(
+        getColumnTransformerDesc(labelTransformer) + ", (" +
+          featureTransformers.map(getColumnTransformerDesc(_)).mkString(",") + ")"
+      )
+    }
+
+    (
+      labelFeatureRdd,
+      labelTransformer,
+      featureTransformers,
+      columns(labelColIndex),
+      featureNames,
+      catFeatureIndices
+    )
+  }
+
   /**
    * Convert the given data frame into an RDD of label, feature vector pairs.
    * All label/feature values are also converted into Double.
