@@ -211,8 +211,15 @@ object GradientBoosting {
     )
 
     val trainingData = sampleRdds(0)
+    if (trainingData.isEmpty()) {
+      throw new IllegalStateException("The training dataset is empty.")
+    }
+
     val validationData =
       if (fracTraining < 1.0) {
+        if (sampleRdds(1).isEmpty()) {
+          throw new IllegalStateException("The validation dataset is empty despite asking for a non-empty validation dataset.")
+        }
         Some(sampleRdds(1))
       } else {
         None
@@ -550,6 +557,14 @@ object GradientBoosting {
       curGradRdd.unpersist(blocking = true)
       // Get terminal node statistics to update terminal predictions.
       val tree: GBInternalTree = gbtStore.getInternalTree(curTreeCnt - 1)
+
+      // If the tree's root node size is 0, then throw an exception since
+      // there are too few data points.
+      if (tree.nodes(1).weight == 0.0) {
+        throw new IllegalStateException(
+          "The training dataset for the new tree was empty. The bagging rate may be too small."
+        )
+      }
 
       if (gbOpts.verbose) {
         // Print the trained tree into an ASCII.
