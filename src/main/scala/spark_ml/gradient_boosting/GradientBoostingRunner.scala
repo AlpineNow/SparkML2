@@ -328,8 +328,8 @@ object GradientBoostingRunner {
             }
           ).csvFile(sqlContext, inputPath)
 
-        case StorageFormat.Avro => sqlContext.load(inputPath, "com.databricks.spark.avro")
-        case StorageFormat.Parquet => sqlContext.load(inputPath)
+        case StorageFormat.Avro => sqlContext.read.format("com.databricks.spark.avro").load(inputPath)
+        case StorageFormat.Parquet => sqlContext.read.load(inputPath)
       }
 
       val dataFrame = config.repartitionSize match {
