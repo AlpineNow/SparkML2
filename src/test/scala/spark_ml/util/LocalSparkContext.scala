@@ -17,6 +17,7 @@
 
 package spark_ml.util
 
+import org.apache.log4j.{Level, Logger}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.scalatest.{BeforeAndAfterAll, Suite}
 
@@ -28,6 +29,9 @@ trait LocalSparkContext extends BeforeAndAfterAll { self: Suite =>
 
   override def beforeAll() {
     super.beforeAll()
+    // http://stackoverflow.com/questions/27781187/how-to-stop-messages-displaying-on-spark-console
+    Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
+    Logger.getLogger("akka").setLevel(Level.WARN)
     Thread.sleep(100L)
     val conf = new SparkConf()
       .setMaster("local[3]")
